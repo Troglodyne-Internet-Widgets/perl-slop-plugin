@@ -1,0 +1,13 @@
+{
+  "name": "perl-slop",
+  "description": "",
+  "version": "0.0.1",
+  "author": {
+    "name": "George S. Baugh"
+  },
+  "homepage": "https://github.com/Troglodyne-Internet-Widgets/perl-slop-plugin",
+  "repository": "https://github.com/Troglodyne-Internet-Widgets/perl-slop-plugin",
+  "license": "MIT",
+  "skills": "./skills/",
+  "commands": "./commands/"
+}
