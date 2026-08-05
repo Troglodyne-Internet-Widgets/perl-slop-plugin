@@ -1,4 +1,11 @@
-# Testing the troglodyne way
+---
+name: perl-testing
+trigger: When writing or running perl tests
+description: |
+How to write and run perl tests.
+---
+
+I'm using the perl:test skill to write or run Perl tests.
 
 ## Definitions
 
@@ -92,6 +99,24 @@ When DB calls have to be faked, use DBIX::QuickDB.
 # Running tests
 
 Run tests with `prove -lm -j8`
+
+Re-run with `-v $testfile` option if you need details on why a specific test failed
+
+# Test coverage
+
+To discern coverage information run `cover -test -report json`.
+It will output coverage information per test and total in `cover\_db/cover.json`
+
+We want coverage per file to be greater than or equal to what it was before a patchset.
+
+# Test performance
+
+Structural test files should not ever take more than 30 seconds to run, and we should aim for substantially less than that.
+If the runtime of a test increases by 3 standard deviations versus what it previously took, profiling should be done; there is likely room for improvement.
+
+`prove -MDevel::NYTProf -lmv $testfile && nytprofhtml` will produce the profiling information you need to read in `nytprof/`
+
+See the (perl:profiling)[../perl-profiling/perl-profiling.md] skill for more details.
 
 # Nature of fake data
 
