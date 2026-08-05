@@ -1,8 +1,7 @@
 ---
 name: perl-testing
 trigger: When writing or running perl tests
-description: |
-How to write and run perl tests.
+description: How to write and run perl tests.
 ---
 
 I'm using the perl:test skill to write or run Perl tests.
