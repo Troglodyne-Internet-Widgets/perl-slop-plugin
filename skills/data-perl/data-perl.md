@@ -70,9 +70,27 @@ my @keys = grep { $_ % 2 } @zipped;
 my @values = grep { !($_ % 2) } @zipped;
 my %unzipped;
 @unzipped{@keys} = @values;
+
+# Iteration - you need a c-style loop otherwise the array extents aren't recomputed
+for (my $i=0; $i < scalar(@arr); $i++) {
+    my @recursive_items = look_for_stuff($arr[$i]);
+    push(@arr, @recursive_items);
+    ...
+}
 ```
 
 In general `List::Util` and `List::MoreUtils` can handle most of your hash & list manipulation needs.
+
+# Data generation
+
+Sequences are very easy in perl.
+
+```
+# 0 thru 1000
+my @seq = 0..1000
+```
+
+Prefer Crypt::PRNG when you need to call `rand()`, or get other randomzied data.
 
 # Data Validation
 
