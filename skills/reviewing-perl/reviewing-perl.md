@@ -9,142 +9,83 @@ description: |
 
 I'm using the perl:review skill to review a finished patchset.
 
-This is a self-review pass, not a report. Run it once the patchset is complete
-and the tests pass, but before committing. Anything it turns up, fix — don't
-hand the list back.
+Run this on your own work once the patchset is finished and the tests pass, but
+before you commit or open a PR. It is a self-review pass: read the whole diff
+back, check it against everything below, and fix what it turns up rather than
+reporting it.
 
 Start with `git diff` (or `git diff <base>...HEAD` for a branch) and read every
-hunk. Then check the patchset against each section below.
+hunk. Then check each of the following. Every one of these came out of a real
+review comment on real perl, so treat a hit as something to fix, not something
+to justify.
+
+Don't get into a loop executing this skill.
 
 ## Don't repeat yourself
 
-Repetition in a patch is the cheapest thing to spot and the most expensive to
-leave in, because every future change has to find all the copies.
-
-**No per-script copies of shared state.** Two modulinos that each declare
-`our $thing;` and a `sub thing { $thing //= Build->new(); }` accessor have
-written the same memoization twice. It belongs in the class:
-
-```perl
-# In every script -- twice the code, twice the places to fix it
-our $hv;
-sub hv { $hv //= Trog::HV->new(); return $hv }
-
-# In the class, once
-my $INSTANCE;
-sub new {
-    my ($class, %opts) = @_;
-    my %given = grep { defined $opts{$_} && length $opts{$_} } keys %opts;
-    return $INSTANCE if $INSTANCE && !%given;
-    ...
-    return $INSTANCE = $self;
-}
-```
-
-Now every caller anywhere says `Class->new()` and gets the configured object.
-
-**No re-deriving what an object already knows.** A script computing a path out
-of an object's fields is a method that hasn't been written yet.
-
-**Look for the same block twice.** A near-identical sub in two files is the
-strongest signal there is that something wants extracting.
+- **No per-script copies of shared state.** If two scripts each declare
+  `our $thing;` and a `sub thing { $thing //= Build->new(); }` accessor, the
+  memoization belongs in the class, not in the scripts. Make the constructor a
+  singleton and let every caller just say `Class->new()` and fetch what it needs
+  from that object.
+- **No re-deriving what an object already knows.** If a script computes a path
+  from an object's fields, that computation is a method on the object.
+- **Look for the same block twice.** Two scripts with a near-identical sub is a
+  class method or library function that hasn't been written yet.
 
 ## Encapsulate
 
-**Free subs taking an object first are methods in disguise.**
-
-```perl
-sub tf_dir_for { my ($hv, $override) = @_; ... }   # move it
-$hv->tf_dir                                        # there
-```
-
-**Package globals threaded through half a file are fields.** `our $domain_dir`
-read by eight subs that all already have the object in hand is state living in
-the wrong place.
-
-**Push knowledge down, not up.** A script says *what* it wants; the class knows
-*how*:
-
-```perl
-system( qw{virsh destroy}, $name );   # the script knows too much
-$hv->annihilate_domain($name);        # better
-```
-
-**A ternary picking between two spellings of one call means the abstraction is
-leaking.** Make the one call handle both cases:
-
-```perl
-$hv->is_local ? unlink($f) : $hv->system_hv( qw{rm -f}, $f );   # leak
-$hv->unlink_hv($f);                                            # sealed
-```
+- **Ask what owns the data.** Free subs in a script that take an object as their
+  first argument (`sub tf_dir_for { my ($hv, $override) = @_; ... }`) are methods
+  wearing a disguise. Move them.
+- **Package globals are a smell.** `our $domain_dir` threaded through eight subs
+  is a field on the object those subs already have in hand.
+- **Push knowledge down, not up.** A script should say *what* it wants
+  (`$hv->annihilate_domain($name)`), never *how* to get it
+  (`system(qw{virsh destroy}, $name)`).
 
 ## Use the library, not the shell
 
-Prefer a real API to shelling out — `Sys::Virt` over `virsh`, `Net::DNS` over
-`dig`, `DBI` over `mysql -e`. Shelling out means parsing output meant for
-humans, quoting by hand, and throwing the error away. See the
-[perl:test](../testing-perl/testing-perl.md) skill on why this matters for
-testability too.
-
-When you genuinely must shell out, say in a comment *why* the API can't do it,
-so the next person doesn't have to rediscover the dead end:
-
-```perl
-# libvirt exposes DHCP leases read-only -- virNetworkGetDHCPLeases has no
-# counterpart that deletes one -- so releasing a lease means the lease helper.
-```
-
-That comment is also what an explicit `## no critic (ProhibitPipeOpen)` is
-asking you for.
+- **Prefer a real API over shelling out.** `Sys::Virt` over `virsh`, `Net::DNS`
+  over `dig`, `DBI` over `mysql -e`, and the same reasoning everywhere else.
+  Shelling out means parsing human-readable output, quoting by hand, losing the
+  error and suffering a performance hit to boot.
+- When you genuinely have to shell out, say in a comment *why* the API can't do
+  it. (Example: libvirt exposes DHCP leases read-only, so releasing one means
+  the lease helper.) That comment is also what an explicit `## no critic` is
+  asking you for.
 
 ## Perl style
 
-These three are enforced by policies from
-[Troglodyne-Internet-Widgets](https://github.com/Troglodyne-Internet-Widgets),
-so if the repo has them in its `.perlcriticrc` the linter will find them. Look
-anyway; a patch is easier to fix than a lint failure is to argue with.
+- **No ternaries that pick between two spellings of the same call.**
+  `$hv->is_local ? unlink($f) : $hv->system_hv(qw{rm -f}, $f)` means the
+  abstraction is leaking; make the one call do both.
 
-- **`use FindBin::libs`, never `use lib "$FindBin::Bin/../lib"`.** The
-  hardcoded path is wrong the moment a script moves.
-  (`Perl::Critic::Policy::ProhibitUseLib`)
-- **POD and `Pod::Usage`, never a `usage()` sub.** A hand-rolled usage is a
-  second copy of the interface that goes stale.
-  (`Perl::Critic::Policy::ProhibitUsageSubs`)
-- **`qw{}` for runs of literals.** `system_hv( qw{sudo rm -f}, $conf )`, not
-  `system_hv( 'sudo', 'rm', '-f', $conf )`.
-  (`Perl::Critic::Policy::RequireQwForLiteralLists`)
+Run the house policies over the diff:
 
-Run whatever the repo configures:
+    perlcritic --profile .perlcriticrc bin/ lib/ t/
 
-```
-perlcritic --profile .perlcriticrc bin/ lib/ t/
-```
+Try to install them if perlcritic says it has no such policy.
+If the user needs to assist with this, flag them down.
 
 ## Unstated dependencies
 
-The bugs that survive review are the ones nothing in the diff mentions.
-
-Ask what else has to be true for the patch to work. A change that copies one
-file to another machine should make you ask what else on that machine the far
-side reads. Anything provisioned outside this repository is the easiest thing
-in the world to miss, precisely because nothing here names it.
-
-Whatever you assume but cannot enforce goes in a comment, the POD, or the
-README — whichever the next person will actually read.
+- **Ask what else has to be true.** Any time you encounter evidence that
+  there is a dependency on or relationship to another system or repository,
+  ask yourself if we are forgetting to handle something important to the
+  external system. Don't hesitate to ask the user about it.
+- Anything you assume but can't enforce goes in a comment, the POD, or the
+  Readme — whichever the next person will actually read.
 
 ## Tests
 
 - Every behavior the patchset added or changed has a test.
-- Tests need no live service, no network and no root.
-- A sub that moved between packages took its tests with it.
-- Coverage per file is no worse than before the patchset.
+- If you moved a sub between packages, its tests moved with it.
+- Coverage per file is no worse than it was before the patchset.
+- Consult the relevant testing skills available to you; see
+  [perl:test](../testing-perl/testing-perl.md).
 
 ## Finally
 
-```
-prove -lm -j8              # the suite still passes
-perl -c $changed_file      # everything still compiles
-podchecker $changed_file   # the POD you just wrote is valid
-```
-
-Then commit.
+Run the suite (`prove -lm -j8`) and make sure every changed file still compiles
+(`perl -c`) and its POD still parses (`podchecker`) before you call it done.
