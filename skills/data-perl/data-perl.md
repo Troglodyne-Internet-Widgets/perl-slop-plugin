@@ -2,8 +2,8 @@
 name: data-perl
 trigger: Need to define or manipulate variables and data in perl.
 description: |
-Use idiomatically correct ways of coercing variables,
-validating their data, and use scoping rules to your advantage.
+  Use idiomatically correct ways of coercing variables,
+  validating their data, and use scoping rules to your advantage.
 ---
 
 # Perl Data - how to correctly use data in perl
