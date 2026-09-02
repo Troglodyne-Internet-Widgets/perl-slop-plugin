@@ -7,7 +7,7 @@ description: |
   undocumented assumptions that a human reviewer would otherwise have to.
 ---
 
-I'm using the perl:review skill to review a finished patchset.
+I'm using the perl-slop:reviewing-perl skill to review a finished patchset.
 
 Run this on your own work once the patchset is finished and the tests pass, but
 before you commit or open a PR. It is a self-review pass: read the whole diff
@@ -83,7 +83,7 @@ If the user needs to assist with this, flag them down.
 - If you moved a sub between packages, its tests moved with it.
 - Coverage per file is no worse than it was before the patchset.
 - Consult the relevant testing skills available to you; see
-  [perl:test](../testing-perl/testing-perl.md).
+  [perl-slop:testing-perl](../testing-perl/testing-perl.md).
 
 ## Finally
 

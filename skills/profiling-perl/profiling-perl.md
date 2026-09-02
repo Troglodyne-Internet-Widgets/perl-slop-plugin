@@ -14,6 +14,8 @@ description: |
   repo. Always deletes the profile artifacts when done.
 ---
 
+I'm using the perl-slop:profiling-perl skill to profile Perl code.
+
 # Performance Profiling — NYTProf Skill
 
 Perl code almost always has a Perl script/cgi/psgi entry point that

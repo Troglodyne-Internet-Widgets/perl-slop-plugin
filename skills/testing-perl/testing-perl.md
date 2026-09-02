@@ -1,10 +1,10 @@
 ---
-name: perl-testing
+name: testing-perl
 trigger: When writing or running perl tests
 description: How to write and run perl tests.
 ---
 
-I'm using the perl:test skill to write or run Perl tests.
+I'm using the perl-slop:testing-perl skill to write or run Perl tests.
 
 ## Definitions
 
@@ -115,7 +115,7 @@ If the runtime of a test increases by 3 standard deviations versus what it previ
 
 `prove -MDevel::NYTProf -lmv $testfile && nytprofhtml` will produce the profiling information you need to read in `nytprof/`
 
-See the (perl:profiling)[../perl-profiling/perl-profiling.md] skill for more details.
+See the [perl-slop:profiling-perl](../profiling-perl/profiling-perl.md) skill for more details.
 
 # Nature of fake data
 

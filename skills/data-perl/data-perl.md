@@ -6,6 +6,8 @@ description: |
   validating their data, and use scoping rules to your advantage.
 ---
 
+I'm using the perl-slop:data-perl skill to define or manipulate data in Perl.
+
 # Perl Data - how to correctly use data in perl
 
 ## Basic types

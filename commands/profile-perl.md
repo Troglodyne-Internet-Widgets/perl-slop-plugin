@@ -3,4 +3,4 @@ name: profile-perl
 description: Profile and performance test perl code
 ---
 
-Invoke the `perl:profile` skill. See `skills/profiling-perl/profiling-perl.md`.
+Invoke the `perl-slop:profiling-perl` skill. See `skills/profiling-perl/profiling-perl.md`.
