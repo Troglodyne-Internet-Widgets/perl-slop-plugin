@@ -83,6 +83,80 @@ for (my $i=0; $i < scalar(@arr); $i++) {
 
 In general `List::Util` and `List::MoreUtils` can handle most of your hash & list manipulation needs.
 
+# Subroutines: state or data manipulation
+
+Nearly every sub you write is one of two things, and it is worth knowing which
+you are writing before you write it:
+
+1. **Data manipulation.** Takes arguments, returns a result, touches nothing
+   outside itself. Called twice with the same arguments it does the same work
+   twice.
+2. **State management.** Owns something that outlives the call -- a handle, a
+   cache, a counter, a connection.
+
+Plenty of subs do both, and that is fine. What is not fine is being unclear
+about it, because a sub that looks purely like data manipulation is telling
+its callers that keeping the result is *their* job. Callers routinely drop that
+ball: they call it in a loop, or once per rendered file, and the sub obligingly
+redoes the work every time.
+
+When you find that, the smaller fix is almost always to bolt the state
+management onto the sub rather than to rework every caller. Memoize it.
+
+## Memoizing
+
+The usual way is the `state` keyword, which needs `use feature 'state';` (any
+`use v5.10;` or later gives it to you):
+
+```perl
+use feature 'state';
+
+sub expensive {
+    my ($self, $key) = @_;
+    state %cache;
+    return $cache{$key} //= do_the_work($key);
+}
+```
+
+**Know what scope `state` actually gives you.** A `state` variable in a named
+sub is one variable *for the sub*, created once and shared by every call from
+every caller -- it is not per object, and there is no per-object form of it.
+That is what you want for something genuinely process-wide, and it is a bug
+waiting to happen for anything that belongs to an instance:
+
+```perl
+# Wrong, if two objects of this class can exist at once: the second one gets
+# the first one's answer.
+sub config {
+    my ($self) = @_;
+    state %by_class;
+    return $by_class{ ref $self } //= $self->build();
+}
+
+# Right: the cache belongs to the object, so it lives on the object.
+sub config {
+    my ($self) = @_;
+    return $self->{_config} //= $self->build();
+}
+```
+
+Ask where the cached thing belongs and put it there: on the object if it is the
+object's, in a `state` variable if it is the program's. Then **test the case
+that tells them apart** -- two objects of the same class, or two calls with
+different arguments. Both mistakes above return a plausible wrong answer rather
+than failing, so nothing else will catch them.
+
+**Key the cache on whatever the answer depends on.** If the sub takes arguments
+that change the result, they belong in the key; if it genuinely only ever gets
+one set, say so in the POD rather than leaving the next person to guess. A memo
+that ignores its arguments is the same bug as the one above wearing different
+clothes.
+
+**Say so in the POD.** A caller has to know that a second call is free, that the
+answer may be the one from an hour ago, and whether there is any way to clear
+it. Memoization is part of a sub's contract, not an implementation detail --
+`Memoize` on CPAN will do it for you from outside, and the same applies there.
+
 # Data generation
 
 Sequences are very easy in perl.
