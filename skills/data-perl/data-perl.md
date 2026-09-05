@@ -146,11 +146,22 @@ that tells them apart** -- two objects of the same class, or two calls with
 different arguments. Both mistakes above return a plausible wrong answer rather
 than failing, so nothing else will catch them.
 
-**Key the cache on whatever the answer depends on.** If the sub takes arguments
-that change the result, they belong in the key; if it genuinely only ever gets
-one set, say so in the POD rather than leaving the next person to guess. A memo
-that ignores its arguments is the same bug as the one above wearing different
-clothes.
+**Decide whether the cache needs a key at all, and say which.** If one instance
+genuinely only ever gets one set of arguments -- because the thing it belongs to
+is built fresh for each -- then no key is needed and adding one buys nothing but
+a serialization to write. If it can get more than one, they belong in the key.
+Either way the POD has to say which, because a caller cannot tell by looking,
+and a memo that silently ignores arguments that matter is the same bug as the
+one above wearing different clothes.
+
+**Watch the lifetime, not just the scope.** The subtler failure is a cache that
+outlives the thing it describes. Where a sub validates or builds from a
+configuration, a cache surviving past the object means the next object -- built
+fresh, with a configuration that ought to be *rejected* -- gets answered from
+the last one that succeeded, and the exception never fires. Tests that assert
+"this bad input must die" are exactly the ones that stop testing anything, and
+they will not tell you why. Tie the cache to the lifetime of what it caches and
+the problem cannot arise; that is usually the object.
 
 **Say so in the POD.** A caller has to know that a second call is free, that the
 answer may be the one from an hour ago, and whether there is any way to clear
