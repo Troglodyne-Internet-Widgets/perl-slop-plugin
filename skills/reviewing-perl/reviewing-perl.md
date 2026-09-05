@@ -21,6 +21,10 @@ to justify.
 
 Don't get into a loop executing this skill.
 
+If the diff changed code you did not write, check it against
+[perl-slop:reading-perl](../reading-perl/reading-perl.md) as well: the question
+there is whether you understood what you were changing before you changed it.
+
 ## Don't repeat yourself
 
 - **No per-script copies of shared state.** If two scripts each declare
@@ -67,6 +71,35 @@ Run the house policies over the diff:
 
 Try to install them if perlcritic says it has no such policy.
 If the user needs to assist with this, flag them down.
+
+## Comments and POD
+
+The reader's attention is the scarce resource. Every line of prose in the file
+spends some of it, so each one has to earn its place.
+
+- **Why a change was made belongs in the commit message, not in the code.** The
+  commit is not a worse place for it -- it is the right one, and `git blame` on
+  the line reaches it from inside the editor. A comment saying what this used to
+  do, what was wrong with it, or which bug it fixes is describing an event, and
+  events go in history. The code has to make sense to somebody who has never
+  heard of the bug.
+- **A comment earns its place by explaining something the code cannot.** Two
+  kinds do: the non-obvious -- why this order, why this constant, why the
+  seemingly redundant call is load-bearing, why the API can't do it -- and the
+  orienting, the sentence at the top of a hairy block telling the reader what
+  role it plays in the design so they can follow the rest. Both are about the
+  code as it stands, not about how it got there.
+- **Cut the comment that restates the line under it.** If it only says what the
+  code says, delete it; if the code needs it, the code needs better names.
+- **POD is a contract, not a diary.** It tells a caller what to pass, what comes
+  back, what it dies on, and anything they must know and cannot see. It is not
+  the place for implementation detail they cannot act on, for the history of the
+  interface, or for narrating what the reader is about to read anyway. Somebody
+  is reading it to use this; give them that and stop.
+- **Reread your own prose as a stranger.** Fresh from writing the change, you
+  cannot tell what is obvious from what merely feels obvious to you today. Ask of
+  each comment: would this still be worth reading a year from now, by somebody
+  who was not here for the argument?
 
 ## Unstated dependencies
 
