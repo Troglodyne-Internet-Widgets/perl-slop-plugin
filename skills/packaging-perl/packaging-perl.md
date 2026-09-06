@@ -22,7 +22,7 @@ document is why each piece is there.
 
 ```
 SKILL=<this skill's directory>
-mkdir -p newdist/lib newdist/t && cd newdist && git init
+mkdir -p newdist/lib newdist/t newdist/git-hooks && cd newdist && git init
 
 cp $SKILL/templates/dist.ini              dist.ini
 cp $SKILL/templates/weaver.ini            weaver.ini
@@ -33,7 +33,14 @@ cp $SKILL/templates/perltidyrc            .perltidyrc
 cp $SKILL/templates/preferred_modules.ini .preferred_modules.ini
 cp $SKILL/templates/gitignore             .gitignore
 cp $SKILL/templates/mailmap               .mailmap
+cp $SKILL/templates/pre-commit            git-hooks/pre-commit
+
+chmod +x git-hooks/pre-commit
+cp git-hooks/pre-commit .git/hooks/
 ```
+
+Install the hook in every clone, including this first one -- git will not do it
+for you, and a hook nobody installed is a tree that drifts.
 
 Then substitute. The placeholders are the same in every file:
 
@@ -90,6 +97,25 @@ without it. See below.
 
 **`.mailmap`** is for `[Git::Contributors]`, which otherwise lists the same
 person once per address they have ever committed from.
+
+**`git-hooks/pre-commit`** runs perltidy over the Perl you staged and restages
+it. Tracked in the repository rather than only in `.git/hooks`, because git does
+not version or clone hooks, so an untracked one exists on exactly one machine.
+
+It is there because a `.perltidyrc` on its own does not keep a tree tidy.
+Tidying a file you are changing three lines of buries the change in a hundred
+lines of reformatting, so the reasonable thing is to skip it -- and then the next
+person has the same reason, and the tree drifts until a mass tidy is the only way
+back. A mass tidy is a diff nobody can review, and it lands on top of whatever
+else is in flight. One commit's worth at a time is small enough that the question
+never comes up.
+
+If you are installing this in a distribution that has already drifted, tidy
+everything in one commit of its own first, so the hook has nothing left to do and
+the next diff is the change rather than the reformatting. Check that mass tidy
+rather than trusting it: comparing each file's PPI token stream before and after
+tells you whether anything but whitespace moved, and perltidy does occasionally
+find a construct it reads differently from perl.
 
 ## The things that stop a release
 
