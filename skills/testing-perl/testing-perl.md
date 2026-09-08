@@ -95,6 +95,8 @@ When you are specifically testing for a termination condition, use Test::Fatal o
 
 When DB calls have to be faked, use DBIX::QuickDB.
 
+When a piece of code is removed, don't assert that it isn't there - testing undefined behavior is a waste of time.
+
 # Running tests
 
 Run tests with `prove -lm -j8`
