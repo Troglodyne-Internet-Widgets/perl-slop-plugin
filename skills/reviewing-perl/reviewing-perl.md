@@ -96,6 +96,16 @@ spends some of it, so each one has to earn its place.
   the place for implementation detail they cannot act on, for the history of the
   interface, or for narrating what the reader is about to read anyway. Somebody
   is reading it to use this; give them that and stop.
+- **The POD for a sub goes directly above that sub.** Not gathered into a block
+  at the top of the file describing four subs that appear three screens later.
+  Two things go wrong with the gathered version and both are silent: the reader
+  editing one of those subs has no documentation in front of them, and the
+  documentation drifts from the code because nothing puts the two on the same
+  screen. A sub whose contract changed is one you are already looking at -- so
+  is its POD, if the POD is where it belongs.
+
+  The `=head1` that groups them is fine where it is. It is the per-sub `=head2`
+  that has to move down to the thing it describes.
 - **Reread your own prose as a stranger.** Fresh from writing the change, you
   cannot tell what is obvious from what merely feels obvious to you today. Ask of
   each comment: would this still be worth reading a year from now, by somebody
