@@ -34,6 +34,7 @@ cp $SKILL/templates/preferred_modules.ini .preferred_modules.ini
 cp $SKILL/templates/gitignore             .gitignore
 cp $SKILL/templates/mailmap               .mailmap
 cp $SKILL/templates/pre-commit            git-hooks/pre-commit
+cp $SKILL/templates/CLAUDE.md             CLAUDE.md
 
 chmod +x git-hooks/pre-commit
 cp git-hooks/pre-commit .git/hooks/
@@ -55,7 +56,7 @@ Then substitute. The placeholders are the same in every file:
 | `{{DATE}}` | today, `YYYY-MM-DD` |
 
 ```
-sed -i 's/{{DIST}}/Configd/; s/{{VERSION}}/0.001/; ...' dist.ini weaver.ini Changes LICENSE .gitignore .mailmap
+sed -i 's/{{DIST}}/Configd/; s/{{VERSION}}/0.001/; ...' dist.ini weaver.ini Changes LICENSE .gitignore .mailmap CLAUDE.md
 grep -rn '{{' . && echo 'still some to fill in'
 ```
 
@@ -80,6 +81,19 @@ dzil build && dzil test
   `.perlcriticrc` names. Without those comments a fresh clone cannot install
   what it needs to build, and the error it gives is about a missing policy
   rather than about a missing list. **Add a line whenever you add a policy.**
+
+**`CLAUDE.md`** is the procedure an agent follows here, and it is mostly a list
+of which of these skills to invoke when.  It is a starting point rather than a
+finished file: two of its sections are prose gaps in angle brackets -- what the
+distribution is, and the documents it actually has -- and a CLAUDE.md still
+describing a generic distribution is one nobody will trust the rest of.  Fill
+them in with the first commit.
+
+Whatever else you add to it, keep three things: the reading pass before the
+first edit, the three review skills in that order before a commit, and the note
+that the *why* belongs in the commit message rather than in a comment.  Those
+are what stop an agent writing a second copy of something you already have and
+then explaining it in a comment nobody asked for.
 
 **`weaver.ini`** generates the POD boilerplate — `NAME`, `VERSION`, `AUTHORS`,
 `COPYRIGHT AND LICENSE` — from what `dist.ini` already knows, and collects
