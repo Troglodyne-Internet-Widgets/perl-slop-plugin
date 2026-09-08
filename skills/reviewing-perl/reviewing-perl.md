@@ -119,6 +119,26 @@ spends some of it, so each one has to earn its place.
   who was not here for the argument?
 - **Don't document something twice.**  If the same thing is described in comments
   *And* POD, drop the comments.
+- **Unless the second place cannot see the first -- then leave a pointer, not a
+  copy.** The rule above is about two copies of an argument drifting apart. It is
+  not about a reader who has no way to reach the one copy from where they are
+  standing. A template, a generated fragment, a shell script that ends up on a
+  machine: each is read on its own, and a line whose reason lives in a module's
+  POD three directories away reads as arbitrary from inside one. Deleting the
+  local note there does not remove a duplicate, it removes the only explanation
+  that reader will ever see, and the line gets "tidied away" by the next person.
+
+  So keep the constraint in a clause and name where the argument lives:
+
+      # /etc, not /root: some builds of rsync will not read a config out of
+      # /root.  Provisioner::Recipe::backup has the whole account.
+
+  The test is whether the note *restates* the reasoning or *reaches* it. One
+  clause and a name is a pointer: it cannot drift far from what it points at,
+  because there is not enough of it to drift. A second paragraph is a copy, and
+  will. When this pass turns up the same explanation in two places, ask which
+  one the reader can get to before you decide which one to cut -- the answer is
+  usually that the far copy becomes a pointer and the near one stays whole.
 - ** Use the precise word always** Your audience has a large vocabulary.
   Don't use a word like 'shape' to describe a function when 'interface' is more precise.
   Words have specific meanings, and you must choose the best match with the least
