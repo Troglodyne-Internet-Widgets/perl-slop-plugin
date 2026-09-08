@@ -1,10 +1,10 @@
 ---
 name: reading-perl
-trigger: About to change a block of code somebody else wrote, or that you no longer remember writing.
+trigger: About to change a block of code somebody else wrote, or that you no longer remember writing -- or about to add a sub, an option or a helper to a codebase you did not write all of.
 description: |
-  Find out why a line is the way it is before you change it.
-  git blame, the commit behind it, and the questions to ask of code whose
-  reasons are not in front of you.
+  Find out why a line is the way it is before you change it, and whether the
+  thing you are about to write is already there.  git blame, the commit behind
+  it, and the questions to ask of code whose reasons are not in front of you.
 ---
 
 I'm using the perl-slop:reading-perl skill to understand code before changing it.
@@ -72,6 +72,47 @@ Sometimes the commit says `wip` and the author is gone. Then:
   around somebody else's bug.
 - If it is genuinely load-bearing and nobody knows why, that is a question for
   the user, not a thing to resolve on your own judgement.
+
+## Before you add, look for what already does it
+
+Blame answers "why is this line here". The other reading question is "is this
+already here", and it is asked before writing rather than before editing.
+
+The failure it prevents looks like this: you need a thing, the codebase does not
+appear to have one, you write it, and it turns out there was one under a name
+you did not think to search for. Now there are two, they will drift, and the
+next person has to work out which is authoritative.
+
+**Your own review pass will not catch this.** A review reads the diff, and the
+thing you duplicated is not in the diff -- it is the untouched file next door.
+That is a structural blind spot, not a lapse in care, and the only place to
+cover it is here, before the code exists.
+
+So before adding a sub, an option, a helper or a dependency:
+
+- **Search for the noun, not your name for it.** You will call it
+  `persisted_secret`; the tree calls it `guest_secrets`. Grep for what it
+  *returns* or *touches* -- `git grep -n 'sub .*secret'`, `git grep -n
+  'readdir\|opendir'` -- rather than the identifier you have in your head.
+- **Read the whole module you are adding to**, its POD and its list of subs,
+  not just the region you are editing. Two subs that do one job usually sit in
+  the same file, added years apart.
+- **For anything that is a solved problem** -- walking a directory, temp files,
+  JSON, retrying -- ask whether a module already does it before hand-rolling.
+  If your project has a `.preferred_modules.ini`, that question has a written
+  answer and the answer belongs in there once you have found it.
+- **Count the copies before you fix one.** If you found a second, look for a
+  third. A hand-rolled `readdir` walk that appears twice usually appears four
+  times, and the fix is one helper, not two patches.
+
+Two things to be clear about when you find the existing one:
+
+- **It being worse than yours is not a reason to add yours beside it.** Two ways
+  to do one thing is the defect, whichever is better. Replace it, or use it.
+- **The reviewer's fix being shorter than yours is the tell.** When somebody
+  answers your patch with a smaller diff that deletes rather than adds, you did
+  not miss a trick -- you added mechanism where the codebase already had some.
+  Take that as the signal to go looking, not just to apply their patch.
 
 ## Then write it down
 

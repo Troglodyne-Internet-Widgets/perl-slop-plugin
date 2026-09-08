@@ -36,6 +36,13 @@ there is whether you understood what you were changing before you changed it.
   from an object's fields, that computation is a method on the object.
 - **Look for the same block twice.** Two scripts with a near-identical sub is a
   class method or library function that hasn't been written yet.
+- **The other copy is often not in the diff.** This pass reads hunks, so a new
+  sub duplicating one that already existed and was not touched is invisible
+  here, however carefully you read. That check belongs before the code was
+  written -- see *Before you add, look for what already does it* in
+  [perl-slop:reading-perl](../reading-perl/reading-perl.md). If you skipped it,
+  do it now: for each thing this diff adds, grep the tree for what already
+  answers it.
 
 ## Encapsulate
 
