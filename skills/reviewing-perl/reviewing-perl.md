@@ -71,6 +71,30 @@ there is whether you understood what you were changing before you changed it.
 - **No ternaries that pick between two spellings of the same call.**
   `$hv->is_local ? unlink($f) : $hv->system_hv(qw{rm -f}, $f)` means the
   abstraction is leaking; make the one call do both.
+- **`use` at the top, unless you can name what breaks.** A deferred `require`
+  buried in a sub costs the reader the dependency list the top of the file is
+  supposed to be, so it needs a reason -- and "it is heavy", "it pulls in a lot"
+  or "it brings an SSH stack with it" are not reasons. Loading a module that
+  declares subs and nothing else costs a compile, which is what `use` is for.
+
+  The reason it is ever right is **work at load time**: a `BEGIN` block, or code
+  outside a sub, that touches the filesystem, the network or the environment.
+  That is a property you can check rather than assert:
+
+      grep -n 'BEGIN' $(perldoc -l Some::Module)
+
+  and follow it down, because the culprit is usually not the module you named.
+  A worked example: `Trog::Guest` has no `BEGIN` block and neither does its
+  parent, so it looks like a plain `use` -- but the parent loads
+  `Net::OpenSSH::More`, which loads `File::HomeDir` in a `BEGIN` block, which
+  stats the filesystem looking for `xdg-user-dir`. Under `Test::MockFile` in
+  strict mode an unmocked stat is fatal, so a top-level `use` stops the test
+  loading the file at all.
+
+  When you do defer, the comment names **that** -- the module four levels down
+  and the thing it does -- not a feeling about weight. A reader who cannot check
+  your reason cannot maintain your code, and the next person deletes a `require`
+  that was load-bearing or keeps one that never was.
 
 Run the house policies over the diff:
 
@@ -117,6 +141,14 @@ spends some of it, so each one has to earn its place.
   cannot tell what is obvious from what merely feels obvious to you today. Ask of
   each comment: would this still be worth reading a year from now, by somebody
   who was not here for the argument?
+- **A reason you have not checked is worse than no reason at all.** A comment
+  asserting why something is done is read as established fact, and it outlives
+  the person who guessed it. Two questions settle it: is this claim true, and
+  did I verify it or infer it? If you inferred it, either check it -- most of
+  these are one command -- or write down what you actually know, including that
+  you do not know why. "No history explains the second call; removing it, tests
+  pass" is a good comment. A confident sentence nobody can reproduce is not, and
+  it is the kind a reviewer is entitled to be rude about.
 - **Don't document something twice.**  If the same thing is described in comments
   *And* POD, drop the comments.
 - **Unless the second place cannot see the first -- then leave a pointer, not a
