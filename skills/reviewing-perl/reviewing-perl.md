@@ -110,6 +110,12 @@ spends some of it, so each one has to earn its place.
   cannot tell what is obvious from what merely feels obvious to you today. Ask of
   each comment: would this still be worth reading a year from now, by somebody
   who was not here for the argument?
+- **Don't document something twice.**  If the same thing is described in comments
+  *And* POD, drop the comments.
+- ** Use the precise word always** Your audience has a large vocabulary.
+  Don't use a word like 'shape' to describe a function when 'interface' is more precise.
+  Words have specific meanings, and you must choose the best match with the least
+  ambiguity of meaning, not the one in widest parlance.
 
 ## Unstated dependencies
 
