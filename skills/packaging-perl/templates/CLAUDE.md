@@ -85,4 +85,13 @@ able to tell them why.  Which is also why the *why* goes there rather than in a
 comment.
 
 When you have verified something, say what you ran and what it said.  A claim
-that the tests pass is worth the line that shows them passing.
+that the tests pass is worth the line that shows them passing.  So is a claim
+about work you did: the URL `gh pr create` gave back, the sha `git push`
+reported.  A PR number nobody can open is worse than no number.
+
+Stack a branch on another only when the *code* depends on it, never when only
+the verification does.  A change whose tests cannot go green until somebody
+else's fix lands is still an independent change: open it against the default
+branch and say in the description what has to land first.  Stacked, it merges
+into whatever its base happens to be -- and if that base reached the default
+branch by some other route, the child lands nowhere and nothing says so.
