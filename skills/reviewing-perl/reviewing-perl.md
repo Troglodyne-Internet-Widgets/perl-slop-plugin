@@ -96,6 +96,20 @@ there is whether you understood what you were changing before you changed it.
   your reason cannot maintain your code, and the next person deletes a `require`
   that was load-bearing or keeps one that never was.
 
+  **And check whether the test is the thing that needs fixing.** Load-time work
+  that only breaks under `Test::MockFile` is a test-ordering problem, not a
+  reason to contort the module: MockFile has to be the last thing loaded before
+  the SUT, so a dependency that opens or stats a file while compiling gets
+  `use`d in the test file ahead of it. Deferring the load in the *source* to
+  keep a test happy is the tail wagging the dog, and it is only the right answer
+  when the module doing the work is the system under test itself.
+
+  Name the offender exactly when you do that. Loading a parent or a wrapper
+  instead can drag in more than you meant and break the mocking you still need
+  -- pulling in something that uses `File::Slurper` compiles its `open` before
+  MockFile can replace it, and every read the SUT makes then goes to the real
+  filesystem.
+
 Run the house policies over the diff:
 
     perlcritic --profile .perlcriticrc bin/ lib/ t/
