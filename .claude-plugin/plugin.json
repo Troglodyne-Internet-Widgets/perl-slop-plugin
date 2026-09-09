@@ -1,7 +1,7 @@
 {
   "name": "perl-slop",
   "description": "A collection of various perl development skills",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "author": {
     "name": "George S. Baugh"
   },
