@@ -97,7 +97,8 @@ When DB calls have to be faked, use DBIX::QuickDB.
 
 ## Things to keep in mind when writing tests of any kind
 
-When a piece of code is removed, don't assert that its behavior isn't there - testing undefined behavior is a waste of time.
+The entire point of testing is to provide actionable information to decisionmakers.
+Your assertion message needs to provide this, and a test failing should result in additional diagnostic information being emitted when feasible.
 
 The only time a test is valuable is *when it fails*.  Tests must be written such that they *can* fail.
 
@@ -105,9 +106,10 @@ In general you should test the *boundaries* of a function's input domain, this i
 Inputs outside the boundaries *should* fail, inputs *inside* the boundary should pass.  Be very sure about whether
 the boundary is closed or open.
 
-When testing a function's *outputs* it's the same process inverted.  Be very sure about the domain of acceptable output,
-and that acceptable input results in good output, while invalid input results in an error rather than acceptable-looking
-but invalid output.
+When testing a function's *outputs*, be very sure about the domain of acceptable output, and that acceptable input results in good output,
+while invalid input results in an error rather than acceptable-looking but invalid output.
+
+When a piece of code is removed, don't assert that its behavior isn't there - testing undefined behavior is a waste of time.
 
 # Running tests
 
