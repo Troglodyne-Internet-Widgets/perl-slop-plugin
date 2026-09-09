@@ -97,6 +97,51 @@ When DB calls have to be faked, use DBIX::QuickDB.
 
 When a piece of code is removed, don't assert that it isn't there - testing undefined behavior is a waste of time.
 
+## Assert on the behaviour, not on the artifact
+
+The commonest way a test passes while the thing it is named after is broken: it
+checks that a configuration you generated *contains* something, instead of
+checking that the system which reads that configuration *does* something.
+
+You wrote the artifact. Of course it contains what you put in it. An assertion
+over it can only fail when the interpolation broke -- never when the value was
+wrong, and never when the thing consuming it reads it differently than you
+assumed.
+
+Three that got through review this way, in one patchset:
+
+- An exclusion pattern was asserted by matching it against a path in Perl. The
+  pattern was handed to `rsync`, which has its own rules about what a pattern
+  means, so one that read exactly right and excluded nothing passed.
+- A firewall exemption was asserted by grepping the generated rules file for the
+  rule. It was there. It was also in a chain where `RETURN` skipped the accept
+  rules below it, so the "exemption" dropped every packet from the network it
+  named.
+- The address in that exemption was asserted by grepping for the value the test
+  itself had supplied. It passed while the value was wrong, and passed again
+  while it was wrong in the opposite direction.
+
+So **ask the thing that will act on it**. Run `rsync` over a scratch tree and
+see which files arrive. Ask `iptables -S` which chain the rule landed in, rather
+than asking the file what it says. Hand the config to the parser that will read
+it in anger. That is usually a few lines and a `File::Temp` directory, and it is
+the difference between testing your templating and testing your feature.
+
+Two smells that say you are asserting on the artifact:
+
+- **The expected value came from the test.** If the test supplies `$net` and then
+  greps the output for `$net`, the only thing it can detect is a template that
+  dropped it. A wrong `$net` sails through.
+- **The assertion would still pass if the consumer changed its mind.** Glob
+  syntax, regex flavour, chain semantics, quoting rules -- an assertion that does
+  not go through the real implementation is pinned to your belief about that
+  implementation rather than to the implementation.
+
+The check that catches all of it: **make the assertion fail on purpose.** Break
+the value, the pattern or the ordering, and confirm the test goes red before you
+call it done. An assertion you have never seen fail is one you are guessing
+about, and all three above stayed green against deliberately broken input.
+
 # Running tests
 
 Run tests with `prove -lm -j8`
