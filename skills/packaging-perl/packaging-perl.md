@@ -166,6 +166,21 @@ for anything that has to run on whatever perl is already installed. Decide which
 you are writing, and if it is the second, say so where somebody will see it:
 Ubuntu 24.04 ships 5.38, 22.04 ships 5.34.
 
+If it is the second, the answer is **`use 5.014`, and never lower.** Two
+reasons, and the first is not negotiable. The template profile carries
+`RegularExpressions::RequireDefault`, which wants `/aa` on every pattern -- by
+`use re '/aa'` or on each one -- and `/aa` arrived in 5.14, so anything lower is
+a declaration the code does not keep. The second is that nothing older is worth
+the effort: a perl before 5.14 in 2026 is a CentOS 5 box somebody is paying to
+keep alive, and supporting it is their bill, not ours. So no shims and no
+fallbacks for what an older perl lacks.
+
+Say it in three places and keep them equal: the `use` line in every module,
+the `use` line in every test, and `perl:` in `prereqs.yaml`. `[@TestingMania]`
+includes `Test::MinimumVersion`, which reads the syntax rather than the
+declaration -- so `use 5.010` over a `use re '/aa'` fails `dzil test` with
+"requires 5.014 due to syntax", which is how this was found.
+
 ## Releasing
 
 ```
