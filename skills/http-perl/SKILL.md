@@ -54,6 +54,11 @@ my $res = HTTP::Tiny->new( timeout => 10 )->get($url);
 Real parallelism, one process, no forking. It is fiddlier than it looks, and it
 has a trap that costs an afternoon -- see below.
 
+**The loop below runs, and is not yet known to be the right shape.** It was
+arrived at by bisecting a failure rather than from the idiom, and issue #3 is
+open on replacing it with one somebody wrote on purpose. Take the trap as
+established and the surrounding shape as provisional.
+
 ```perl
 use Net::Curl::Multi qw(:constants);
 use Net::Curl::Easy  qw(:constants);
