@@ -98,9 +98,11 @@ So before adding a sub, an option, a helper or a dependency:
   not just the region you are editing. Two subs that do one job usually sit in
   the same file, added years apart.
 - **For anything that is a solved problem** -- walking a directory, temp files,
-  JSON, retrying -- ask whether a module already does it before hand-rolling.
-  If your project has a `.preferred_modules.ini`, that question has a written
-  answer and the answer belongs in there once you have found it.
+  JSON, retrying, generating a key -- ask whether a module already does it
+  before hand-rolling. If your project has a `.preferred_modules.ini` or a
+  `.preferred_binaries.ini`, **read it first**: that question may already have a
+  written answer, and if it does not, the answer belongs in there once you have
+  found it.
 - **Count the copies before you fix one.** If you found a second, look for a
   third. A hand-rolled `readdir` walk that appears twice usually appears four
   times, and the fix is one helper, not two patches.

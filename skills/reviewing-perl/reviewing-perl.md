@@ -41,8 +41,40 @@ there is whether you understood what you were changing before you changed it.
   here, however carefully you read. That check belongs before the code was
   written -- see *Before you add, look for what already does it* in
   [perl-slop:reading-perl](../reading-perl/reading-perl.md). If you skipped it,
-  do it now: for each thing this diff adds, grep the tree for what already
-  answers it.
+  do it now, and do it the way the next section says rather than the way that
+  feels sufficient.
+
+### The search that finds it, and the one that does not
+
+Every new sub in the diff gets one of these, and it takes a minute each. It is
+worth spelling out because the search everybody runs is the one that cannot
+work.
+
+**You will search for the thing you reached for. Search for what the sub does
+instead.** Somebody who shells out to `ssh-keygen` greps `ssh-keygen`, finds the
+one other call, concludes there is no library way, and writes their own -- while
+the library sub that does exactly it sits three directories away, never
+mentioning `ssh-keygen` anywhere except in a line of POD saying it is
+*equivalent to* it. The name you have in your head is the name the existing code
+had no reason to use.
+
+So grep the **noun the sub returns** and the **verb it performs**, two or three
+spellings of each:
+
+    git grep -in 'sub .*\(pubkey\|public_key\|ssh_key\)'   # what it returns
+    git grep -in 'Crypt::\|Digest::\|MIME::Base64'          # what it would use
+    git grep -in 'sub .*\(readdir\|opendir\|find\)'        # what it touches
+
+**And read the registries before you write, not after.** A `.preferred_modules.ini`,
+a `.perlcriticrc`, a `CLAUDE.md`, a `Makefile.PL` prereq list: each is somebody
+having already answered "what do we use for this", and each is faster to read
+than the tree is to grep. They are described elsewhere as places to record an
+answer; they are also the first place to look for one.
+
+Say what you searched for, in the commit message or the PR, when the answer was
+"nothing". A search nobody can see is one nobody can tell you was the wrong
+search -- which is the only way this gets caught, since by definition the code
+you missed is not in the diff a reviewer is reading either.
 
 ## Encapsulate
 
