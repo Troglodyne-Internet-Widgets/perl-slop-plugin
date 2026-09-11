@@ -98,6 +98,13 @@ you missed is not in the diff a reviewer is reading either.
   the lease helper.) That comment is also what an explicit `## no critic` is
   asking you for.
 
+## On code removals
+
+- **Chesterton's Fence**
+Don't remove pieces of code that appear to have no useful function without
+first gathering evidence as to why the code exists in the first place via the
+`reading-perl` skill.  If this is inconclusive, ask the user directly.
+
 ## Perl style
 
 - **No ternaries that pick between two spellings of the same call.**
