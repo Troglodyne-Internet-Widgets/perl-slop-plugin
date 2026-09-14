@@ -175,6 +175,21 @@ spends some of it, so each one has to earn its place.
   code as it stands, not about how it got there.
 - **Cut the comment that restates the line under it.** If it only says what the
   code says, delete it; if the code needs it, the code needs better names.
+- **If the name says it, say nothing.** A comment explaining a call to
+  `coerce_arrayref`, `clone` or `guard_undef` is describing the identifier the
+  reader has just read, and the fact that the call is there already implies it
+  was needed. The same goes for the language: that you coerce or guard data you
+  do not trust is assumed of anyone writing perl, and recapitulating it spends
+  the reader's attention on nothing. Rename before you annotate -- a name that
+  needs a gloss is the defect, not the missing gloss.
+- **One sentence, one subordinate clause.** What it does, then why, and stop.
+  `# shallow copy to not pollute later consumers` is the whole form: ordinary
+  English, not telegraphese. The cap is structural on purpose, because one
+  clause cannot hold a mechanism, a war story and an error string, and so it
+  forecloses what "be concise" never does. When a second sentence feels
+  necessary, name what it is first: mechanism goes in the POD if anywhere, and
+  anything in the past tense -- "nothing was filling them in", "so it rendered
+  empty" -- is commit-message material that wandered into the source.
 - **POD is a contract, not a diary.** It tells a caller what to pass, what comes
   back, what it dies on, and anything they must know and cannot see. It is not
   the place for implementation detail they cannot act on, for the history of the
