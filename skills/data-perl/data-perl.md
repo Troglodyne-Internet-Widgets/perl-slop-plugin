@@ -37,6 +37,41 @@ Make sure variables don't live longer than you need them to via the correct decl
 
 For more details refer to `perldoc perlsub`.
 
+# Capturing output
+
+When code or a test needs what something printed, to STDOUT, STDERR or both,
+capture it with `Capture::Tiny`. Do not redirect by hand: no
+`open( my $fh, '>', \my $buf )` followed by `local *STDOUT = $fh`, no `select`,
+and no dup-ing STDOUT or STDERR with `open( STDOUT, '>&', ... )` and putting it
+back afterwards.
+
+```perl
+use Capture::Tiny qw{capture};
+
+my ( $out, $err, @result ) = capture { run_the_thing(@args) };
+```
+
+`capture` returns STDOUT, then STDERR, then whatever the block returned; in
+scalar context it returns only STDOUT. `capture_stdout`, `capture_stderr` and
+`capture_merged` (both streams in one string) return the one capture followed
+by the block's return values. When the output should still be shown as well as
+kept, use the `tee` forms: `tee`, `tee_stdout`, `tee_stderr`, `tee_merged`.
+
+**Hand-rolled redirection only catches the perl filehandle.** `local *STDOUT`
+pointed at a scalar changes what perl's `STDOUT` refers to, not the file
+descriptor underneath it. A child run with `system()` or `IPC::Run3` inherits
+descriptors 1 and 2, and XS code writes to the descriptor, so their output goes
+straight past the buffer and the capture comes back empty or partial without
+complaint. `Capture::Tiny` redirects the descriptors themselves.
+
+**It has to be put back on every way out.** `local` unwinds on a `die`, but
+`select` and a dup of STDOUT are undone only by the line that undoes them, and
+a `die` skips that line. `capture` runs the block in an `eval`, restores the
+original handles, and then rethrows.
+
+`@_` is empty inside the block, so copy a surrounding sub's arguments into a
+lexical first, as `@args` above. See `perldoc Capture::Tiny`.
+
 # Coercions
 
 When describing a coercion as `automatic`, refer to `perldoc perlop` for the finer details.
