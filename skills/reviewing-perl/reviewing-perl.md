@@ -265,3 +265,22 @@ spends some of it, so each one has to earn its place.
 
 Run the suite (`prove -lm -j8`) and make sure every changed file still compiles
 (`perl -c`) and its POD still parses (`podchecker`) before you call it done.
+
+Then check that your checks can fail. A test nobody has watched go red is a test
+you are hoping about, and the same goes for anything you run in a shell to
+convince yourself -- which is where most checking actually happens, and where
+none of it is reviewed.
+
+Two mechanics, because "verify it" on its own does not bind:
+
+- **`$?` after a pipe belongs to the pipe.** `perlcritic lib/ | tail` followed by
+  `echo $?` reports tail's status, which is always 0, and the run it was
+  reporting on may have failed. Capture the status of the command you care
+  about, or read `${PIPESTATUS[0]}` where the shell is bash.
+- **No output is not a pass.** A grep that matches nothing, a probe that prints
+  nothing, a deliberate breakage that produced no failures: each means you
+  learned nothing, not that all is well. Decide what you expect to see before
+  running it, and read silence as a broken check rather than a clean bill.
+
+The cheapest way to buy both is to break the thing on purpose and watch the
+check notice. If it does not notice, it was never testing that.
