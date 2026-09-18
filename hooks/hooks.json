@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "perl \"${CLAUDE_PLUGIN_ROOT}/hooks/skill-gates.pl\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "perl \"${CLAUDE_PLUGIN_ROOT}/hooks/skill-gates.pl\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
