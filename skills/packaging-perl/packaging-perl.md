@@ -140,6 +140,22 @@ has an entry for `{{VERSION}}`; keep adding one per release, above the last.
 `[CheckChangesHasContent]` reads the top entry and stops if it is empty, which
 is the correct behaviour and an annoying surprise at the end of a release.
 
+**A prereq pinned to a version CPAN has not indexed yet.**
+`[CheckPrereqsIndexed]` refuses the release, which is right, and lands at the
+worst moment: you have just cut the dependency yourself, and PAUSE can take the
+better part of an hour to index it. Wait for the index, or install the
+dependency from its own checkout and release afterwards.
+
+The same fact bites harder from the other side, where nothing stops you at all.
+`[AutoPrereqs]` declares everything it finds with no version, so an install
+resolves whatever the index is serving -- which, in the hour after you release
+something, is the version before it. `cpanm` installs that and reports success.
+If the release you just cut is the one your distribution actually needs, you now
+have the old one: an option it does not recognise is merged into its own opts
+and never acted on, so the call succeeds, changes nothing, and neither
+distribution can show you why. Pin the version whenever a particular release is
+what matters, and take the held-up release above as the price of it.
+
 **A hand-written `README.md`.** `[ReadmeAnyFromPod]` generates one from the main
 module's POD, into the repository root. Write one yourself and you have two
 sources for the same text that will drift apart -- and if the hand-written one is
