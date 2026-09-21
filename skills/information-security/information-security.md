@@ -32,6 +32,27 @@ Your domain wegotussomemedicalwaste.biz exceeded the character limit...
 ### Good
 When `$domain` exceeded the character limit...
 
+## Evidence is quoted with the names taken out
+
+Saying what you ran and what it said is how a claim gets believed,
+and it is the likeliest way site-specific detail gets out:
+a log line is full of hostnames, paths and account names,
+and pasting it verbatim is less work than deciding which parts were somebody else's.
+
+Substitute them anyway.
+
+### Bad
+    ok 3 - somebox.customer.tld trusts the host keys of git.internal.customer.tld
+
+### Good
+    ok 3 - $domain trusts the host keys of $forge
+
+The second one proves what the first one proved.
+What made the line evidence was its *shape* -- that the assertion ran, and passed, and which assertion it was --
+and not which installation produced it.
+Whoever needs the literal string has the machine it came from;
+a reader of the issue does not, and is not owed a map of somebody's estate as the price of a passing test.
+
 ## Think abstractly - right thinking begets right doing
 
 Specific data is rarely important to programs.
