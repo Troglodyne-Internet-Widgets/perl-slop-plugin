@@ -96,23 +96,33 @@ sub run_bash {
     return refused( tool_name => 'Bash', tool_input => { command => $command }, transcript_path => $transcript, tool_use_id => 'current', %more );
 }
 
-my @FINISHING = map { "perl-slop:$_" } qw{data-perl testing-perl reviewing-perl};
+my @READING   = map { "perl-slop:$_" } qw{reading-perl information-security};
+my $PROSE     = 'perl-slop:information-security';
+my @FINISHING = ( ( map { "perl-slop:$_" } qw{data-perl testing-perl reviewing-perl} ), $PROSE );
 
-subtest 'an edit to Perl waits for reading-perl' => sub {
+# The Skill calls that an edit to Perl needs.
+sub reading { return map { skill( "r$_", $READING[$_] ) } 0 .. $#READING }
+
+subtest 'an edit to Perl waits for reading-perl and information-security' => sub {
     my $root = repo( 'lib/Foo.pm' => "package Foo;\n1;\n" );
     my $file = "$root/lib/Foo.pm";
 
-    like( edit( $file, transcript() ), qr/perl-slop:reading-perl/, 'refused, naming the skill, when nothing is loaded' );
-    is( edit( $file, transcript( skill( 's1', 'perl-slop:reading-perl' ) ) ), undef, 'allowed once it is loaded' );
-    like( edit( $file, transcript( skill( 's1', 'perl-slop:reading-perl' ), compacted() ) ), qr/reading-perl/, 'refused again after a compaction' );
+    my $why = edit( $file, transcript() );
+    like( $why, qr/\Q$_\E/, "refused, naming $_, when nothing is loaded" ) for @READING;
+    is( edit( $file, transcript( reading() ) ), undef, 'allowed once both are loaded' );
+    like( edit( $file, transcript( skill( 's1', 'perl-slop:reading-perl' ) ) ), qr/information-security/, 'one of two is not enough' );
+    like( edit( $file, transcript( reading(), compacted() ) ), qr/reading-perl/, 'refused again after a compaction' );
 
-    is( edit( $file, transcript( said("Base directory for this skill: /x/skills/reading-perl\n\nI'm using it") ) ), undef, 'a skill that a user loaded by its /name counts' );
+    my @by_name = map { said("Base directory for this skill: /x/skills/$_\n\nI'm using it") } qw{reading-perl information-security};
+    is( edit( $file, transcript(@by_name) ), undef, 'a skill that a user loaded by its /name counts' );
     like(
         edit( $file, transcript( said("The following skills were invoked EARLIER in this session\nBase directory for this skill: /x/skills/reading-perl\n") ) ),
         qr/reading-perl/, 'but not the copy in the reminder after a compaction, which can be cut short'
     );
 
-    is( edit( "$root/README.md", transcript() ), undef, 'an edit to a file that is not Perl is allowed' );
+    like( edit( "$root/README.md", transcript() ), qr/information-security/, 'an edit to a file in any language waits for information-security' );
+    unlike( edit( "$root/README.md", transcript() ), qr/reading-perl/, 'but not for reading-perl' );
+    is( edit( "$root/README.md", transcript( skill( 's1', $PROSE ) ) ), undef, 'and is allowed once it is loaded' );
 
     write_file( $root, 'bin/tool', "#!/usr/bin/env perl\n1;\n" );
     like( edit( "$root/bin/tool", transcript() ), qr/reading-perl/, 'a script is Perl by its shebang' );
@@ -134,15 +144,15 @@ subtest 'a Bash command that writes Perl waits for reading-perl too' => sub {
     is( run_bash( "perltidy -b $root/lib/Foo.pm", $none ), undef, 'perltidy changes layout, and is left alone' );
 };
 
-subtest 'a commit of Perl waits for the three finishing skills, loaded since the last commit' => sub {
+subtest 'a commit of Perl waits for the finishing skills, loaded since the last commit' => sub {
     my $root = repo( 'lib/Foo.pm' => "package Foo;\n1;\n" );
     my @all  = map { skill( "s$_", $FINISHING[$_] ) } 0 .. $#FINISHING;
 
     my $why = run_bash( "cd $root && git add -A && git commit -m x", transcript() );
     like( $why, qr/\Q$_\E/, "refused, naming $_" ) for @FINISHING;
 
-    is( run_bash( "cd $root && git add -A && git commit -m x", transcript(@all) ), undef, 'allowed once all three are loaded' );
-    like( run_bash( "cd $root && git commit -am x", transcript( @all[ 0, 1 ] ) ), qr/reviewing-perl/, 'two of three is not enough' );
+    is( run_bash( "cd $root && git add -A && git commit -m x", transcript(@all) ), undef, 'allowed once all of them are loaded' );
+    like( run_bash( "cd $root && git commit -am x", transcript( @all[ 0 .. 2 ] ) ), qr/information-security/, 'all but one is not enough' );
 
     my $earlier = bash( 'c1', "git commit -m earlier" );
     like( run_bash( "git -C $root commit -m x", transcript( @all, $earlier, result('c1') ) ), qr/data-perl/, 'a commit since they were loaded means loading them again' );
@@ -152,16 +162,46 @@ subtest 'a commit of Perl waits for the three finishing skills, loaded since the
 
 subtest 'what a commit is judged by' => sub {
     my $docs = repo( 'docs/x.md' => "words\n" );
-    is( run_bash( "cd $docs && git commit -am x", transcript() ), undef, 'a commit with no Perl among the changes is allowed' );
+    my $why  = run_bash( "cd $docs && git commit -am x", transcript() );
+    like( $why, qr/information-security/, 'a commit with no Perl among the changes waits for information-security, for its message' );
+    unlike( $why, qr/data-perl/, 'but not for the Perl skills' );
+    is( run_bash( "cd $docs && git commit -am x", transcript( skill( 's1', $PROSE ) ) ), undef, 'and is allowed once it is loaded' );
 
     my $clean = repo();
-    is( run_bash( "cd $clean && git commit --allow-empty -m x", transcript() ), undef, 'and so is one with no changes at all' );
+    like( run_bash( "cd $clean && git commit --allow-empty -m x", transcript() ), qr/information-security/, 'and so does one with no changes at all' );
 
     my $untracked = repo( 'lib/New.pm' => "package New;\n1;\n" );
     like( run_bash( "cd $untracked && git add lib/New.pm && git commit -m x", transcript() ), qr/data-perl/, 'a Perl file not added yet counts' );
 
     is( run_bash( "cd $untracked && git log --grep commit",       transcript() ), undef, 'git log that mentions commit is not a commit' );
     is( run_bash( "cd $untracked && git commit-tree HEAD^{tree}", transcript() ), undef, 'nor is commit-tree' );
+
+    my $heredoc = "cat > /dev/null <<'EOF'\ncd $untracked && git commit -am x\nEOF\n";
+    is( run_bash( $heredoc, transcript() ), undef, 'nor a git commit in the body of a heredoc' );
+    is( run_bash( "cat <<EOF\ngit commit -m x\nEOF\necho done", transcript() ), undef, 'nor one before a command that follows the heredoc' );
+    like( run_bash( "cat <<EOF\nwords\nEOF\ncd $untracked && git commit -m x", transcript() ), qr/data-perl/, 'but a commit after the heredoc ends is' );
+    like( run_bash( "cd $untracked && git commit -F - <<'EOF'\nmessage\nEOF", transcript() ), qr/data-perl/, 'and so is a commit that reads its message from a heredoc' );
+};
+
+subtest 'a post to an issue or a pull request waits for information-security' => sub {
+    my $none   = transcript();
+    my $loaded = transcript( skill( 's1', $PROSE ) );
+
+    foreach my $command ( 'gh pr create --title x --body y', 'gh issue comment 12 --body y', 'cd /x && gh pr review 3 --comment -b y', 'gh api repos/o/r/issues/1/comments -f body=y', 'glab mr note 4 -m y' ) {
+        like( run_bash( $command, $none ), qr/information-security/, "refused: $command" );
+        is( run_bash( $command, $loaded ), undef, "allowed once it is loaded: $command" );
+    }
+    is( run_bash( 'gh pr view 3',                   $none ), undef, 'gh that only reads is allowed' );
+    is( run_bash( 'gh api repos/o/r/issues/1',      $none ), undef, 'and so is gh api that only reads' );
+    is( run_bash( "cat <<EOF\ngh pr create\nEOF\n", $none ), undef, 'and gh in the body of a heredoc' );
+    like( run_bash( qq{gh pr create --body "\$(cat <<'EOF'\nwords\nEOF\n)"}, $none ), qr/information-security/, 'a body from a heredoc is still a post' );
+
+    my $mcp = sub { my ( $tool, $transcript ) = @_; return refused( tool_name => $tool, tool_input => {}, transcript_path => $transcript ) };
+    like( $mcp->( 'mcp__github__add_issue_comment',    $none ), qr/information-security/, 'an MCP tool that comments on an issue' );
+    like( $mcp->( 'mcp__github__create_pull_request',  $none ), qr/information-security/, 'an MCP tool that opens a pull request' );
+    is( $mcp->( 'mcp__github__create_pull_request',    $loaded ), undef, 'allowed once it is loaded' );
+    is( $mcp->( 'mcp__github__get_issue',              $none ), undef, 'an MCP tool that only reads is allowed' );
+    is( $mcp->( 'mcp__github__list_issue_comments',    $none ), undef, 'and so is one that lists comments' );
 };
 
 subtest 'a repository can ask for more skills in .perl-slop.json' => sub {
@@ -175,16 +215,16 @@ subtest 'a repository can ask for more skills in .perl-slop.json' => sub {
     git( $root, 'add', '-A' );
     git( $root, 'commit', '-q', '-m', 'config' );
 
-    my $reading = transcript( skill( 's1', 'perl-slop:reading-perl' ) );
+    my $reading = transcript( reading() );
     like( edit( "$root/lib/Recipe/Foo.pm", $reading ), qr/writing-recipes/, 'a path the config names needs its skill' );
     is( edit( "$root/lib/Other.pm", $reading ), undef, 'a path it does not name does not' );
 
     write_file( $root, 'templates/x.tt', "[% x %]\n" );
     like( run_bash( "cd $root && git commit -am x", transcript() ), qr/provisioning-recipes/, 'a template change asks for what the config says, Perl or not' );
-    is( run_bash( "cd $root && git commit -am x", transcript( skill( 's2', 'provisioning-recipes' ) ) ), undef, 'and passes once it is loaded' );
+    is( run_bash( "cd $root && git commit -am x", transcript( skill( 's2', 'provisioning-recipes' ), skill( 's3', $PROSE ) ) ), undef, 'and passes once it is loaded' );
 };
 
-subtest 'a prompt about speed gets a reminder of profiling-perl' => sub {
+subtest 'a prompt gets reminders of information-security, and of profiling-perl when it is about speed' => sub {
     my $root = repo( 'dist.ini' => "name = X\n" );
     my $ask  = sub {
         my ( $prompt, $transcript ) = @_;
@@ -192,9 +232,14 @@ subtest 'a prompt about speed gets a reminder of profiling-perl' => sub {
         return $out && $out->{hookSpecificOutput}{additionalContext};
     };
 
-    like( $ask->( 'why is this so slow?', transcript() ), qr/profiling-perl/, 'a slow thing' );
-    ok( !$ask->( 'why is this so slow?', transcript( skill( 's1', 'perl-slop:profiling-perl' ) ) ), 'not when the skill is loaded' );
-    ok( !$ask->( 'rename this sub',      transcript() ),                                            'not for anything else' );
+    my $prose = transcript( skill( 's0', $PROSE ) );
+    like( $ask->( 'rename this sub', transcript() ), qr/information-security/, 'information-security for any prompt' );
+    ok( !$ask->( 'rename this sub', $prose ), 'until it is loaded' );
+
+    like( $ask->( 'why is this so slow?', $prose ), qr/profiling-perl/, 'profiling-perl for a slow thing' );
+    ok( !$ask->( 'why is this so slow?', transcript( skill( 's0', $PROSE ), skill( 's1', 'perl-slop:profiling-perl' ) ) ), 'not when the skill is loaded' );
+    my $both = $ask->( 'why is this so slow?', transcript() );
+    like( $both, qr/information-security.*profiling-perl/s, 'and both at once when neither is loaded' );
 };
 
 subtest 'the hook as Claude Code runs it' => sub {

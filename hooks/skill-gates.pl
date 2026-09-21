@@ -13,14 +13,14 @@ use JSON::PP       ();    ## no critic (PreferredModules) -- core, so the hook r
 
 =head1 NAME
 
-hooks/skill-gates.pl - refuse an edit or a commit of Perl until the skills that it needs are loaded
+hooks/skill-gates.pl - refuse an edit, a commit or a post until the skills that it needs are loaded
 
 =head1 DESCRIPTION
 
 Claude Code runs this as a hook of the perl-slop plugin, for PreToolUse on
-Edit, Write, MultiEdit, NotebookEdit and Bash, and for UserPromptSubmit.  It
-reads the hook's JSON on standard input, and prints a decision as JSON, or
-nothing to allow.  F<README.md> says what each gate asks for and why.
+Edit, Write, MultiEdit, NotebookEdit, Bash and MCP tools, and for
+UserPromptSubmit.  It reads the hook's JSON on standard input, and prints a
+decision as JSON, or nothing to allow.  F<README.md> says what each gate asks for and why.
 
 A skill counts as loaded when the transcript shows a Skill call for it, or
 the text of the skill that a user's C</name> loads, after the last compaction.
@@ -31,9 +31,12 @@ stopping work.  C<PERL_SLOP_GATES=0> in the environment turns it off.
 
 =cut
 
+# edit and commit are for Perl.  prose is for anything written in any
+# language, and for anything said to anyone.
 our %BASE = (
     edit   => ['perl-slop:reading-perl'],
     commit => [ 'perl-slop:data-perl', 'perl-slop:testing-perl', 'perl-slop:reviewing-perl' ],
+    prose  => ['perl-slop:information-security'],
 );
 
 our $CONFIG_NAME = '.perl-slop.json';
@@ -53,6 +56,26 @@ our $WRITES_RX = qr{
   | \btee\b | \bcp\b | \bmv\b | \binstall\b | \bpatch\b
   | >>?
 }x;
+
+# Where a new command can start in a Bash command line.
+our $COMMAND_START_RX = qr/(?:\A|[;&|(]|\bthen\b|\bdo\b)\s*/;
+
+# A Bash command that posts to an issue, a pull request, a release or a gist.
+our $PUBLISH_RX = qr{
+    $COMMAND_START_RX
+    (?: gh\s+(?:issue|pr)\s+(?:create|comment|edit|review|close|reopen|merge)
+      | gh\s+(?:release|gist)\s+(?:create|edit)
+      | glab\s+(?:issue|mr)\s+(?:create|note|update|close|reopen|merge)
+    )(?![\w-])
+  | $COMMAND_START_RX
+    gh\s+api\b [^;&|\n]*? \s (?: -[fF] | --(?:raw-)?field | --input | -X\s*(?:POST|PATCH|PUT) | --method[=\s]+(?:POST|PATCH|PUT) )(?![\w-])
+}x;
+
+# An MCP tool that posts to an issue, a pull request, a review or a comment,
+# such as mcp__github__add_issue_comment.  Tools that only read are left out.
+our $PUBLISH_VERB_RX = qr/create|add|update|edit|post|submit|reply|merge/;
+our $PUBLISH_NOUN_RX = qr/issue|pull|merge_request|comment|review|discussion|release|note/;
+our $PUBLISH_TOOL_RX = qr/\Amcp__.*(?:$PUBLISH_VERB_RX.*$PUBLISH_NOUN_RX|$PUBLISH_NOUN_RX.*$PUBLISH_VERB_RX)/i;
 
 our $SLOW_RX = qr/\b(?:slow(?:er|ly|ness)?|profil\w*|time[ds]?[ -]?out|timing out|performance|takes? (?:too )?long|faster)\b/i;
 
@@ -104,17 +127,24 @@ sub decide {
     if ( $tool eq 'Bash' ) {
         my $command = $args->{command} // return;
         my $dir     = command_dir( $command, $input->{cwd} );
-        return commit_gate( $input, $dir ) if is_commit($command);
+        if ( is_commit($command) ) {
+            my $out = commit_gate( $input, $dir );
+            return $out if $out;
+        }
+        return publish_gate($input) if is_publish($command);
         my @files = written_perl_files( $command, $dir );
         return edit_gate( $input, [ map { [$_] } @files ] ) if @files;
     }
+
+    return publish_gate($input) if $tool =~ $PUBLISH_TOOL_RX;
     return;
 }
 
 =head2 $output = edit_gate(\%input, \@files)
 
-Refuses an edit to any of C<@files> until C<perl-slop:reading-perl> is loaded,
-for a Perl file, and until the skills that F<.perl-slop.json> names under
+Refuses an edit to any of C<@files> until C<perl-slop:information-security>
+is loaded, for a file in any language, and C<perl-slop:reading-perl> too, for
+a Perl file, and until the skills that F<.perl-slop.json> names under
 C<before_edit> for its path are loaded.  Each item of C<@files> is a path and,
 for a Write, the content that it writes.
 
@@ -124,6 +154,7 @@ sub edit_gate {
     my ( $input, $files ) = @_;
 
     my ( %needed, @perl );
+    $needed{$_} = 1 for @{ $BASE{prose} };
     foreach my $pair (@$files) {
         my ( $file, $content ) = @$pair;
         my $root = checkout_root($file);
@@ -133,7 +164,6 @@ sub edit_gate {
         }
         $needed{$_} = 1 for configured( $root, 'before_edit', relative( $root, $file ) );
     }
-    return if !%needed;
 
     my $loaded  = session( $input->{transcript_path}, $input->{tool_use_id} )->{loaded};
     my @missing = grep { !is_loaded( $loaded, $_ ) } sort keys %needed;
@@ -146,9 +176,11 @@ sub edit_gate {
 =head2 $output = commit_gate(\%input, $dir)
 
 Refuses a commit in the checkout at C<$dir> until the skills it needs are
-loaded after the last commit in the session.  Those are the three finishing
-skills when any changed file is Perl, and the skills that F<.perl-slop.json>
-names under C<before_commit> for each changed path.
+loaded after the last commit in the session.  Those are
+C<perl-slop:information-security> for any commit, because every commit has a
+message, the three finishing skills when any changed file is Perl, and the
+skills that F<.perl-slop.json> names under C<before_commit> for each changed
+path.
 
 =cut
 
@@ -157,14 +189,12 @@ sub commit_gate {
 
     my $root    = checkout_root($dir) // return;
     my @changed = changed_files($root);
-    return if !@changed;
 
-    my %needed;
+    my %needed = map { $_ => 1 } @{ $BASE{prose} };
     if ( grep { is_perl( File::Spec->catfile( $root, $_ ) ) } @changed ) {
         $needed{$_} = 1 for @{ $BASE{commit} };
     }
     $needed{$_} = 1 for map { configured( $root, 'before_commit', $_ ) } @changed;
-    return if !%needed;
 
     my $session = session( $input->{transcript_path}, $input->{tool_use_id} );
     my $since   = $session->{last_commit} // 0;
@@ -174,27 +204,64 @@ sub commit_gate {
     return deny( "Before this commit, load @{[ list(@missing) ]} with the Skill tool and apply each to the " . 'changes, then commit again.  Each must be loaded after the last commit in this session, ' . 'and after the last compaction.' );
 }
 
+=head2 $output = publish_gate(\%input)
+
+Refuses a post to an issue, a pull request, a review, a release or a gist
+until C<perl-slop:information-security> is loaded.
+
+=cut
+
+sub publish_gate {
+    my ($input) = @_;
+
+    my $loaded  = session( $input->{transcript_path}, $input->{tool_use_id} )->{loaded};
+    my @missing = grep { !is_loaded( $loaded, $_ ) } @{ $BASE{prose} };
+    return if !@missing;
+
+    return deny( "Load @{[ list(@missing) ]} with the Skill tool before a post to an issue, a pull request, " . 'a review, a release or a gist, then post again.  A skill counts once it is loaded after the last compaction.' );
+}
+
 =head2 $output = prompt_reminder(\%input)
 
-Adds a reminder of C<perl-slop:profiling-perl> to a prompt about speed, in a
-Perl project, when that skill is not loaded.
+Adds a reminder of C<perl-slop:information-security> to every prompt until
+it is loaded, because a reply to the user is prose too.  Adds a reminder of
+C<perl-slop:profiling-perl> to a prompt about speed, in a Perl project, when
+that skill is not loaded.
 
 =cut
 
 sub prompt_reminder {
     my ($input) = @_;
 
-    return if ( $input->{prompt} // q{} ) !~ $SLOW_RX;
-    my $root = checkout_root( $input->{cwd} // q{.} ) // return;
-    return if !looks_like_perl_project($root);
-    return if is_loaded( session( $input->{transcript_path} )->{loaded}, 'perl-slop:profiling-perl' );
+    my $loaded = session( $input->{transcript_path} )->{loaded};
+    my @context;
+    if ( my @missing = grep { !is_loaded( $loaded, $_ ) } @{ $BASE{prose} } ) {
+        push @context, "Load @{[ list(@missing) ]} before you reply, and before you write any code, comment, " . 'commit message, issue or pull request.';
+    }
+    if ( is_about_speed( $input->{prompt}, $input->{cwd} ) && !is_loaded( $loaded, 'perl-slop:profiling-perl' ) ) {
+        push @context, 'This is about speed.  Load perl-slop:profiling-perl before concluding ' . 'anything, and measure before and after a change.';
+    }
+    return if !@context;
 
     return {
         hookSpecificOutput => {
             hookEventName     => 'UserPromptSubmit',
-            additionalContext => 'This is about speed.  Load perl-slop:profiling-perl before concluding ' . 'anything, and measure before and after a change.',
+            additionalContext => join( '  ', @context ),
         },
     };
+}
+
+=head2 $bool = is_about_speed($prompt, $cwd)
+
+Whether C<$prompt> is about speed, and C<$cwd> is in a Perl project.
+
+=cut
+
+sub is_about_speed {
+    my ( $prompt, $cwd ) = @_;
+    return if ( $prompt // q{} ) !~ $SLOW_RX;
+    my $root = checkout_root( $cwd // q{.} ) // return;
+    return looks_like_perl_project($root);
 }
 
 =head2 $output = deny($reason)
@@ -364,13 +431,51 @@ sub note_skill_text {
 =head2 $bool = is_commit($command)
 
 Whether a Bash command runs C<git commit>, at its start or after a separator.
-C<git commit-tree>, and a C<git log> that mentions a commit, are not.
+C<git commit-tree>, a C<git log> that mentions a commit, and a C<git commit>
+in the body of a heredoc, are not.
 
 =cut
 
 sub is_commit {
     my ($command) = @_;
-    return $command =~ m/(?:\A|[;&|(]|\bthen\b|\bdo\b)\s*git\s+(?:-\S+\s+\S+\s+)*commit(?![\w-])/;
+    return without_heredocs($command) =~ m/${COMMAND_START_RX}git\s+(?:-\S+\s+\S+\s+)*commit(?![\w-])/;
+}
+
+=head2 $bool = is_publish($command)
+
+Whether a Bash command posts to an issue, a pull request, a release or a gist
+with C<gh> or C<glab>.  Text in the body of a heredoc does not count.
+
+=cut
+
+sub is_publish {
+    my ($command) = @_;
+    return without_heredocs($command) =~ $PUBLISH_RX;
+}
+
+=head2 $command = without_heredocs($command)
+
+C<$command> with the body of each heredoc taken out.  The line that starts a
+heredoc stays, and so does its terminator line.  A body is data that goes to
+a command, and not a command that the shell runs.
+
+=cut
+
+sub without_heredocs {
+    my ($command) = @_;
+
+    my ( @kept, @ends );
+    foreach my $line ( split m/(?<=\n)/, $command ) {
+        if (@ends) {
+            next if $line !~ m/\A\s*\Q$ends[0]\E\s*\z/;
+            shift @ends;
+        }
+        push @kept, $line;
+
+        # <<< is a here string, and << between numbers is a shift.
+        push @ends, $2 while $line =~ m/(?<!<)<<(?!<)-?\s*(['"]?)([A-Za-z_][\w.-]*)\1/g;
+    }
+    return join q{}, @kept;
 }
 
 =head2 $dir = command_dir($command, $cwd)

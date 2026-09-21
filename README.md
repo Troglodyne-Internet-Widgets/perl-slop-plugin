@@ -21,18 +21,37 @@ forget.  So the plugin also has hooks, in `hooks/hooks.json`, which refuse an
 action until the skill that it needs is loaded.  A refusal names the skills
 that are missing, and the model loads them and tries again.
 
-- Before an edit to a Perl file, `perl-slop:reading-perl`.  This covers the
-  Edit and Write tools, and a Bash command that writes a Perl file with
+`perl-slop:information-security` is for prose in any language, so its gates
+apply to every project, Perl or not.
+
+- Before an edit to any file, `perl-slop:information-security`, because an
+  edit can add comments.  This covers the Edit and Write tools.  For a Bash
+  command that writes a file, the gate applies only to a Perl file, as in the
+  next item.  The hook finds the files that a command writes by their Perl
+  names.  A gate on every redirect also refuses `2>&1`, so there is none.
+- Before an edit to a Perl file, `perl-slop:reading-perl` too.  This covers
+  the Edit and Write tools, and a Bash command that writes a Perl file with
   `sed -i`, `perl -i`, `python3`, a redirect, `tee`, `cp`, `mv`, `install` or
   `patch`.  A Perl file is a `.pm`, `.pl`, `.t` or `.psgi` file, or a file
   with a `perl` shebang.
-- Before a `git commit` when any changed file is Perl, `perl-slop:data-perl`,
-  `perl-slop:testing-perl` and `perl-slop:reviewing-perl`, each loaded since
-  the last commit in the session.  The changed files are what `git status`
-  shows, staged or not, because a command that adds and commits has not added
-  anything yet when the hook runs.
-- When a prompt is about speed in a Perl project, a reminder of
-  `perl-slop:profiling-perl`.  This one does not refuse anything.
+- Before any `git commit`, `perl-slop:information-security`, for the commit
+  message.  When any changed file is Perl, also `perl-slop:data-perl`,
+  `perl-slop:testing-perl` and `perl-slop:reviewing-perl`.  Each must be
+  loaded since the last commit in the session.  The changed files are what
+  `git status` shows, staged or not, because a command that adds and commits
+  has not added anything yet when the hook runs.
+- Before a post to an issue, a pull request, a review, a release or a gist,
+  `perl-slop:information-security`.  This covers `gh` and `glab` commands
+  that write, and `gh api` with a field or a write method.  It also covers MCP
+  tools whose names say that they create, add, update, post, submit, reply to
+  or merge one of those.
+- On every prompt until it is loaded, a reminder of
+  `perl-slop:information-security`, because a reply to the user is prose too.
+  When a prompt is about speed in a Perl project, a reminder of
+  `perl-slop:profiling-perl`.  Reminders do not refuse anything.
+
+A `git commit`, `gh` or `glab` in the body of a heredoc is data, and does not
+count as a command.
 
 A skill counts when it is loaded after the last compaction, because a
 compaction takes it out of the model's context.

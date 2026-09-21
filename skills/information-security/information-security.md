@@ -16,7 +16,7 @@ but that nevertheless represents an information disclosure risk.
 
 The classic example of this is DNS Zones.
 While any given record may be queried publicly,
-dumping the zonefile (such as can happen due to promiscuously allowing AFXR)
+dumping the zonefile (such as can happen due to promiscuously allowing AXFR)
 gives an attacker a map of your entire attack surface.
 
 The same applies to configuration files, databases and the information contained therein.
