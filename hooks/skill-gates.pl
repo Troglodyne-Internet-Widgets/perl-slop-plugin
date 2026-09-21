@@ -58,7 +58,11 @@ our $WRITES_RX = qr{
 }x;
 
 # Where a new command can start in a Bash command line.
-our $COMMAND_START_RX = qr/(?:\A|[;&|(]|\bthen\b|\bdo\b)\s*/;
+# A newline starts a command as much as a semicolon does.  Without it here,
+# every gate read only the first line of a multi-line command: `echo hi\ngit
+# commit -m x` was not a commit, and the same on the far side of a heredoc was
+# not either.
+our $COMMAND_START_RX = qr/(?:\A|[;&|(\n]|\bthen\b|\bdo\b)\s*/;
 
 # A Bash command that posts to an issue, a pull request, a release or a gist.
 our $PUBLISH_RX = qr{
@@ -480,16 +484,29 @@ sub without_heredocs {
 
 =head2 $dir = command_dir($command, $cwd)
 
-The directory that a command runs its git in: the one after C<git -C>, or a
-leading C<cd>, or C<$cwd>.
+The directory that a command runs its git in: the one after C<git -C>, or the
+last C<cd> that starts a command, or C<$cwd>.
+
+The last rather than the first, because C<cd a && cd b> ends up in b.  Any
+command start rather than the start of the whole string, because a C<cd> on the
+second line is as real as one on the first -- and while only the first was
+matched, a commit after a heredoc was judged against whatever directory the
+shell happened to be in rather than the repository it names.
+
+A C<cd> in the body of a heredoc is data, so it is taken out first.
 
 =cut
 
 sub command_dir {
     my ( $command, $cwd ) = @_;
     $cwd //= Cwd::getcwd();
-    my ($dir) = $command =~ m/\bgit\s+-C\s+("[^"]+"|'[^']+'|\S+)/;
-    ($dir) = $command =~ m/\A\s*cd\s+("[^"]+"|'[^']+'|\S+)/ if !defined $dir;
+
+    my $said = without_heredocs($command);
+
+    my ($dir) = $said =~ m/\bgit\s+-C\s+("[^"]+"|'[^']+'|\S+)/;
+    if ( !defined $dir ) {
+        while ( $said =~ m/${COMMAND_START_RX}cd\s+("[^"]+"|'[^']+'|\S+)/g ) { $dir = $1 }
+    }
     return $cwd if !defined $dir;
     $dir =~ s/\A(["'])(.*)\1\z/$2/;
     $dir =~ s{\A~(?=/|\z)}{$ENV{HOME} // q{~}}e;

@@ -181,6 +181,17 @@ subtest 'what a commit is judged by' => sub {
     is( run_bash( "cat <<EOF\ngit commit -m x\nEOF\necho done", transcript() ), undef, 'nor one before a command that follows the heredoc' );
     like( run_bash( "cat <<EOF\nwords\nEOF\ncd $untracked && git commit -m x", transcript() ), qr/data-perl/, 'but a commit after the heredoc ends is' );
     like( run_bash( "cd $untracked && git commit -F - <<'EOF'\nmessage\nEOF", transcript() ), qr/data-perl/, 'and so is a commit that reads its message from a heredoc' );
+
+    # A newline starts a command as much as a semicolon does.  While it did
+    # not, every gate read the first line and stopped there, so each of these
+    # was allowed -- with or without a heredoc in front of it.
+    like( run_bash( "cd $untracked\ngit commit -m x",       transcript() ), qr/data-perl/, 'a commit on the second line is a commit' );
+    like( run_bash( "echo hi\ncd $untracked && git commit", transcript() ), qr/data-perl/, 'and so is one after any other command' );
+
+    # And the directory it is judged against is the one it names, wherever the
+    # cd is.  Only a cd at the start of the whole command used to count, so a
+    # commit after a heredoc was judged against the wrong repository.
+    like( run_bash( "cat <<EOF\nwords\nEOF\ncd $untracked\ngit commit -m x", transcript() ), qr/data-perl/, 'a cd after a heredoc still says which repository' );
 };
 
 subtest 'a post to an issue or a pull request waits for information-security' => sub {
@@ -194,6 +205,7 @@ subtest 'a post to an issue or a pull request waits for information-security' =>
     is( run_bash( 'gh pr view 3',                   $none ), undef, 'gh that only reads is allowed' );
     is( run_bash( 'gh api repos/o/r/issues/1',      $none ), undef, 'and so is gh api that only reads' );
     is( run_bash( "cat <<EOF\ngh pr create\nEOF\n", $none ), undef, 'and gh in the body of a heredoc' );
+    like( run_bash( "echo hi\ngh pr create --title x --body y", $none ), qr/information-security/, 'a post on the second line is a post' );
     like( run_bash( qq{gh pr create --body "\$(cat <<'EOF'\nwords\nEOF\n)"}, $none ), qr/information-security/, 'a body from a heredoc is still a post' );
 
     my $mcp = sub { my ( $tool, $transcript ) = @_; return refused( tool_name => $tool, tool_input => {}, transcript_path => $transcript ) };
