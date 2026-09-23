@@ -131,6 +131,20 @@ subtest 'the hook judges what it tidied, with the profile that was copied' => su
     ok( $tidy_at > 0 && $critic_at > $tidy_at, 'and runs it after the tidy pass rather than before' );
 
     like( $hook, qr/exit\s+1/, 'a refusal stops the commit' );
+
+    # A test is not a module, and a release does not judge t/ at all, so the one
+    # policy that asks a test for a page nobody will read is dropped there.
+    my ($test_pass) = $hook =~ m/^([^\n]*perlcritic[^\n]*\$test_files[^\n]*)$/m;
+    my ($lib_pass)  = $hook =~ m/^([^\n]*perlcritic[^\n]*\$lib_files[^\n]*)$/m;
+
+    # Named, so that a pattern that stops matching fails here rather than
+    # passing an undef to unlike() and reporting nothing.
+    ok( defined $test_pass && defined $lib_pass, 'the hook runs one pass over t/ and one over everything else' )
+      or diag('no perlcritic line found for one of the two lists');
+
+    like( $test_pass, qr/--exclude\s+Documentation::RequirePod/, 't/ is judged without the POD requirement' );
+    like( $test_pass, qr/--profile\s+\.perlcriticrc/,            'and by the same profile as everything else' );
+    unlike( $lib_pass, qr/--exclude/,                            'while a module is still asked for its POD' );
 };
 
 subtest 'what the profiles read is scaffolded and shipped' => sub {

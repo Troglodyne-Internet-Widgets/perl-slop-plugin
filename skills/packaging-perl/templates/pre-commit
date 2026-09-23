@@ -47,29 +47,45 @@ exec 1>&2
 # would fail on a path that is no longer there.
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
 
-perl_files=''
+lib_files=''
+test_files=''
 for file in $staged
 do
     test -f "$file" || continue
 
+    is_perl=''
     case "$file" in
         *.pm|*.pl|*.PL|*.t)
-            perl_files="$perl_files $file"
-            continue
+            is_perl=1
             ;;
     esac
 
-    if test -x "$file" && head -n 1 "$file" | grep -Eq '^#!.*perl'
+    if [ -z "$is_perl" ] && test -x "$file" && head -n 1 "$file" | grep -Eq '^#!.*perl'
     then
-        perl_files="$perl_files $file"
+        is_perl=1
     fi
+
+    test -n "$is_perl" || continue
+
+    # Whether a file is perl at all, and then which list it goes in.  One case
+    # statement doing both would file t/00-load.t under whichever arm it reached
+    # first, and the .t rule is above the path rule.
+    case "$file" in
+        t/*) test_files="$test_files $file" ;;
+        *)   lib_files="$lib_files $file" ;;
+    esac
 done
 
-# Quoted here, because a bare [ $perl_files ] is a syntax error the moment there
+# For the tidy pass, which does not care which list a file came from.  The
+# emptiness tests below concatenate the two without a space instead: with one,
+# "no perl staged at all" would be a string holding a space, which is not empty.
+all_files="$lib_files $test_files"
+
+# Quoted here, because a bare [ $all_files ] is a syntax error the moment there
 # is more than one file -- which would stop the hook working in exactly the
 # commits that need it most.  Unquoted below, because there the word splitting is
 # what turns one string into an argument list.
-if [ -z "$perl_files" ]
+if [ -z "$lib_files$test_files" ]
 then
     :
 elif command -v perltidy >/dev/null 2>&1
@@ -78,12 +94,12 @@ then
 
     # -bext='/' makes perltidy delete the backup it would otherwise leave
     # sitting next to the file as <name>.bak.
-    perltidy -b -bext='/' $perl_files || {
+    perltidy -b -bext='/' $all_files || {
         echo "pre-commit: perltidy failed, leaving the commit alone."
         exit 1
     }
 
-    git update-index --add $perl_files
+    git update-index --add $all_files
     echo "Done."
 else
     echo "pre-commit: perltidy is not on PATH, skipping the tidy pass."
@@ -99,14 +115,33 @@ fi
 # profile judges -- a commit of documentation, say -- is not the same thing as
 # having no perlcritic to judge it with, and one else says the second whenever
 # the first is true.
-if [ -z "$perl_files" ]
+if [ -z "$lib_files$test_files" ]
 then
     echo "Nothing staged that the profile judges."
 elif command -v perlcritic >/dev/null 2>&1
 then
     echo "Running perlcritic..."
 
-    if ! perlcritic --profile .perlcriticrc $perl_files
+    # Both passes run even when the first has already failed, so one commit
+    # shows every objection rather than one list's worth at a time.
+    critic_failed=''
+
+    if [ -n "$lib_files" ]
+    then
+        perlcritic --profile .perlcriticrc $lib_files || critic_failed=1
+    fi
+
+    # The same profile for t/, less one policy.  A test is not a module: nobody
+    # runs perldoc on it, so requiring POD of it asks for a page no reader will
+    # ever open.  Everything else in the profile still judges it, which is more
+    # than a release does -- all_critic_ok() reads lib/ and not t/, so this hook
+    # is the only thing that looks at a test file at all.
+    if [ -n "$test_files" ]
+    then
+        perlcritic --profile .perlcriticrc --exclude Documentation::RequirePod $test_files || critic_failed=1
+    fi
+
+    if [ -n "$critic_failed" ]
     then
         echo
         echo "pre-commit: perlcritic refused the above.  Either fix them, or say"

@@ -189,9 +189,13 @@ clone hooks, so an untracked one exists on exactly one machine.
 
 Critic runs after the tidy pass, never before, because the tidy pass rewrites
 those files and stages what it wrote -- so the bytes critic has to judge are the
-ones that will land, not the ones you saved. A machine with no perlcritic skips
-the pass and says so, the way it already does for perltidy; `dzil test` runs the
-same profile, so nothing reaches CPAN unjudged.
+ones that will land, not the ones you saved. Files under `t/` are judged by the
+same profile less `Documentation::RequirePod`: a test is not a module, nobody
+runs `perldoc` on one, and asking it for POD asks for a page no reader will
+open. Every other policy still applies there, which is more than a release does.
+A machine with no perlcritic skips the pass and says so, the way it already does
+for perltidy; `dzil test` runs the same profile over `lib/`, so nothing reaches
+CPAN unjudged.
 
 It is there because a `.perltidyrc` on its own does not keep a tree tidy.
 Tidying a file you are changing three lines of buries the change in a hundred
@@ -253,12 +257,16 @@ none of them test what your code does. `dzil test` passing on a distribution
 with an empty `t/` means the packaging is fine and says nothing else. See
 [perl-slop:testing-perl](../testing-perl/testing-perl.md).
 
-**A test file with no shebang.** `Documentation::RequirePackageMatchesPodName`
-reads a file without one as a module, and then wants its POD `NAME` to match the
-package -- which in a `.t` is `main`. The message is "Pod NAME on line 7 does not
-match the package declaration", and it points nowhere near the cause. Start every
-test with `#!/usr/bin/env perl` and it reads it as the program it is. The hook
-catches this before the commit; `dzil test` catches it the day you release.
+**A test file with POD and no shebang.**
+`Documentation::RequirePackageMatchesPodName` reads a file without one as a
+module, and then wants its POD `NAME` to match the package -- which in a `.t` is
+`main`. The message is "Pod NAME on line 7 does not match the package
+declaration", and it points nowhere near the cause. Start every test with
+`#!/usr/bin/env perl` and it reads it as the program it is.
+
+Only the hook will tell you. `all_critic_ok()`, which is what `[@TestingMania]`
+generates, reads `lib/` (or `blib/`) and never `t/`, so a release judges your
+modules and not your tests.
 
 **A perl version said in one place and not the others.** Which version you are
 targeting is the question at the top of this document; this is what happens when
