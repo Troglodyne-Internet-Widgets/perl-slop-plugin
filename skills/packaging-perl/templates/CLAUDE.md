@@ -21,6 +21,13 @@ It is also the pass that asks whether the thing you are about to write is
 already here under a name you did not think to search for.  Two subs doing one
 job is the defect, whichever is better.
 
+## What perl this runs on
+
+`use {{PERL_FLOOR}}`, in every module and every test, and `perl:` in
+`prereqs.yaml` says the same thing.  `.perlcriticrc` assumes it: the header of
+that file names the policies the version pays for, so raising or lowering the
+floor is a change to the profile as well as to the `use` lines.
+
 ## Where it is written down
 
 | | |

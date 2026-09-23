@@ -18,6 +18,59 @@ Everything here is in `templates/` beside this file. Copy them, substitute, and
 you have a distribution that builds, tests and releases. The rest of this
 document is why each piece is there.
 
+## Ask which perl before you copy anything
+
+Ask the person what this has to run on. It is the first question, not a detail
+to settle later: the answer picks the critic profile, the `use` line in every
+module and every test, and `perl:` in `prereqs.yaml`, and changing it afterwards
+means editing all of them at once.
+
+Two answers, and they make genuinely different distributions.
+
+**A perl you control.** One you build, or a machine you install onto, where 5.40
+or later is your decision to make. Copy `templates/perlcriticrc` and declare
+`use 5.040`, or higher. This is the strict profile, and it is strict *because*
+of the version: the language itself now refuses indirect method calls, bareword
+filehandles and code without `strict`, so the profile spends nothing on saying
+so and names the rest of Perl::Critic instead.
+
+**Whatever is already installed.** Anything that ships to somebody else's
+machine, runs on a system perl, or lands in a container you do not build. Copy
+`templates/perlcriticrc.compat` and declare `use 5.014`, and never lower --
+`RegularExpressions::RequireDefault` wants `/aa` on every pattern and `/aa`
+arrived in 5.14, so a lower declaration is one the code does not keep. Nothing
+older is worth the effort either: a perl before 5.14 is a box somebody is paying
+to keep alive, and supporting it is their bill.
+
+"Already installed" is usually newer than it feels -- Ubuntu 24.04 ships 5.38
+and 22.04 ships 5.34 -- so ask what the floor really is. The two profiles differ
+by exactly the policies a newer perl makes pointless, each of which becomes dead
+weight at a version you can look up:
+
+| policy | dead weight from | because |
+|---|---|---|
+| `TestingAndDebugging::RequireUseStrict` | 5.012 | `use VERSION` turns on strict |
+| `Objects::ProhibitIndirectSyntax` | 5.036 | the `indirect` feature is off |
+| `InputOutput::ProhibitBarewordFileHandles` | 5.038 | `bareword_filehandles` is off |
+| `InputOutput::ProhibitBarewordDirHandles` | 5.038 | the same |
+| `Modules::RequireEndWithOne` | 5.038 | `module_true` |
+| `Variables::ProhibitPerl4PackageNames` | 5.042 | the apostrophe package separator is gone |
+| `CodeLayout::RequireASCII` | 5.042 | `source::encoding "ascii"`, which is stricter than the policy and not skippable |
+
+So a floor of 5.038 wants the compat profile with its first five lines deleted,
+and the strict profile still carries the last two because it assumes only 5.040.
+Delete those two once the floor is 5.041 or later, which selects the 5.042
+bundle.
+
+Every row there was measured rather than remembered, and a new perl is a reason
+to measure again rather than to trust the table:
+
+```
+perl -e 'use 5.038; open(FH, "<", "/dev/null")'   # bareword filehandle not allowed?
+perl -e 'use 5.036; my $x = new Foo;'             # indirect object syntax still parsed?
+printf 'use 5.042; my $s = "\xc3\xa9";' | perl   # non-ASCII character illegal?
+```
+
 ## Scaffold it
 
 ```
@@ -28,9 +81,10 @@ cp $SKILL/templates/dist.ini              dist.ini
 cp $SKILL/templates/weaver.ini            weaver.ini
 cp $SKILL/templates/Changes               Changes
 cp $SKILL/templates/LICENSE               LICENSE
-cp $SKILL/templates/perlcriticrc          .perlcriticrc
+cp $SKILL/templates/perlcriticrc          .perlcriticrc   # or perlcriticrc.compat
 cp $SKILL/templates/perltidyrc            .perltidyrc
 cp $SKILL/templates/preferred_modules.ini .preferred_modules.ini
+cp $SKILL/templates/pod_stopwords         .pod_stopwords
 cp $SKILL/templates/gitignore             .gitignore
 cp $SKILL/templates/mailmap               .mailmap
 cp $SKILL/templates/pre-commit            git-hooks/pre-commit
@@ -49,6 +103,7 @@ Then substitute. The placeholders are the same in every file:
 |---|---|
 | `{{DIST}}` | the distribution name, as `dist.ini`'s `name =` — `Configd`, `Foo-Bar` |
 | `{{VERSION}}` | `0.001` for something new |
+| `{{PERL_FLOOR}}` | the perl you settled on above — `5.040` or `5.014` |
 | `{{AUTHOR_NAME}}`, `{{AUTHOR_EMAIL}}` | as they should appear in POD and metadata |
 | `{{COPYRIGHT_HOLDER}}`, `{{YEAR}}` | for the licence and the generated POD |
 | `{{GITHUB_USER}}` | the account the repository lives under, for `[GithubMeta]` |
@@ -56,7 +111,7 @@ Then substitute. The placeholders are the same in every file:
 | `{{DATE}}` | today, `YYYY-MM-DD` |
 
 ```
-sed -i 's/{{DIST}}/Configd/; s/{{VERSION}}/0.001/; ...' dist.ini weaver.ini Changes LICENSE .gitignore .mailmap CLAUDE.md
+sed -i 's/{{DIST}}/Configd/; s/{{VERSION}}/0.001/; s/{{PERL_FLOOR}}/5.040/; ...' dist.ini weaver.ini Changes LICENSE .gitignore .mailmap CLAUDE.md
 grep -rn '{{' . && echo 'still some to fill in'
 ```
 
@@ -100,11 +155,24 @@ then explaining it in a comment nobody asked for.
 `=method` and `=attr` into sections. Write the interesting POD; let it write the
 rest.
 
-**`.perlcriticrc`** is the house policy set, and it names a good number of
-policies that are not in core Perl::Critic. That is what the second block of
-authordeps is for. `.preferred_modules.ini` is read by the `PreferredModules`
-policy and is where "use this rather than that" lives — `Cpanel::JSON::XS` over
-`JSON::PP`, `YAML::XS` over `YAML::PP`, `Crypt::PRNG` over `rand`.
+**`.perlcriticrc`** is the house policy set, whichever of the two profiles the
+question above picked, and it names a good number of policies that are not in
+core Perl::Critic. That is what the second block of authordeps is for. Each
+profile's own header says what it assumes about the perl and which policies that
+assumption pays for, so read the top of the one you copied before editing it.
+
+One policy ships commented out in both profiles. `ProhibitUnusedDefinitions`
+counts calls from `bin/` and `lib/`, so in a distribution that is only a library
+it reports every sub the library exists to offer -- the policy working correctly
+and telling you nothing. Turn it on in a distribution that ships programs too,
+and put its authordep line back when you do.
+
+`.preferred_modules.ini` is read by the `PreferredModules` policy and is where
+"use this rather than that" lives — `Cpanel::JSON::XS` over `JSON::PP`,
+`YAML::XS` over `YAML::PP`, `Crypt::PRNG` over `rand`. `.pod_stopwords` is read
+by `Documentation::PodSpelling`, which runs aspell over your POD: it holds the
+vocabulary no dictionary has, and your own surname, which appears in the AUTHORS
+section Pod::Weaver generates. A misspelling does not belong in it.
 
 **`Changes`** exists because `[CheckChangesHasContent]` refuses to release
 without it. See below.
@@ -176,26 +244,39 @@ none of them test what your code does. `dzil test` passing on a distribution
 with an empty `t/` means the packaging is fine and says nothing else. See
 [perl-slop:testing-perl](../testing-perl/testing-perl.md).
 
-**A perl version requirement copied without thinking.** The house style is
-`use 5.041`, which is right for code running on machines you control and wrong
-for anything that has to run on whatever perl is already installed. Decide which
-you are writing, and if it is the second, say so where somebody will see it:
-Ubuntu 24.04 ships 5.38, 22.04 ships 5.34.
+**A perl version said in one place and not the others.** Which version you are
+targeting is the question at the top of this document; this is what happens when
+the answer is written down inconsistently. Say it in three places and keep them
+equal: the `use` line in every module, the `use` line in every test, and `perl:`
+in `prereqs.yaml`.
 
-If it is the second, the answer is **`use 5.014`, and never lower.** Two
-reasons, and the first is not negotiable. The template profile carries
-`RegularExpressions::RequireDefault`, which wants `/aa` on every pattern -- by
-`use re '/aa'` or on each one -- and `/aa` arrived in 5.14, so anything lower is
-a declaration the code does not keep. The second is that nothing older is worth
-the effort: a perl before 5.14 in 2026 is a CentOS 5 box somebody is paying to
-keep alive, and supporting it is their bill, not ours. So no shims and no
-fallbacks for what an older perl lacks.
+`[@TestingMania]` includes `Test::MinimumVersion`, which reads the syntax rather
+than the declaration, so a declaration lower than the code fails `dzil test`
+rather than shipping. `use 5.010` over a `use re '/aa'` gives "requires 5.014
+due to syntax", which is how the floor in the compat profile was found in the
+first place. It does not catch the opposite mistake: declaring 5.040 in a
+distribution whose code would run anywhere costs you nothing at build and costs
+your users an upgrade.
 
-Say it in three places and keep them equal: the `use` line in every module,
-the `use` line in every test, and `perl:` in `prereqs.yaml`. `[@TestingMania]`
-includes `Test::MinimumVersion`, which reads the syntax rather than the
-declaration -- so `use 5.010` over a `use re '/aa'` fails `dzil test` with
-"requires 5.014 due to syntax", which is how this was found.
+## When one distribution needs both
+
+A distribution can hold code of both kinds at once: modules that run on the perl
+you build, and helper scripts that ship to a machine and run on whatever is
+there. Keep both profiles, and key them to a directory rather than trying to
+make one profile serve both, which ends as a set of exclusions nobody can read.
+
+The arrangement that works is `.perlcriticrc` for the tree, `.perlcriticrc.<the
+other thing>` beside it, and a pre-commit hook that sorts the staged files by
+path and runs each profile over its own list. Two rules earn their keep there:
+decide whether a file is perl at all before deciding which profile judges it, or
+a `scripts/*.pl` lands in whichever arm of the case statement it reaches first;
+and run both passes even when the first has failed, so one commit shows every
+objection rather than one profile's worth at a time.
+
+Say the split in the second profile's header, in the terms above -- which perl
+that directory runs on, which policies come back because of it, and which ones
+are dropped because they do not fit what those files do. A second profile whose
+header says only "for scripts" is one that will drift into a copy of the first.
 
 ## Releasing
 

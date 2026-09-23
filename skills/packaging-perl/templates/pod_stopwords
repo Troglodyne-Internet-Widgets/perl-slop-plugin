@@ -1,0 +1,23 @@
+# Words Documentation::PodSpelling takes as spelled right, named in .perlcriticrc.
+# aspell is asked for American English, which is what the POD here is written in,
+# so what is left is vocabulary no dictionary has -- commands, daemons, file and
+# option names, module names -- and the pieces of a token aspell splits at a
+# digit, like the IPv of IPv4.  A misspelling does not belong here: fix it.
+#
+# One word per line, sorted, so that adding one is a one-line diff and nobody
+# has to read the whole file to decide whether it is already in it.
+#
+# Put each part of your own name in here, one per line.  PodSpelling reads the
+# AUTHORS section that Pod::Weaver generates, and a surname is in no dictionary.
+
+API
+CPAN
+JSON
+TODO
+filehandle
+perlcritic
+perltidy
+runtime
+stdin
+stdout
+timestamp
