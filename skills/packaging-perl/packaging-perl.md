@@ -180,9 +180,18 @@ without it. See below.
 **`.mailmap`** is for `[Git::Contributors]`, which otherwise lists the same
 person once per address they have ever committed from.
 
-**`git-hooks/pre-commit`** runs perltidy over the Perl you staged and restages
-it. Tracked in the repository rather than only in `.git/hooks`, because git does
-not version or clone hooks, so an untracked one exists on exactly one machine.
+**`git-hooks/pre-commit`** runs perltidy over the Perl you staged, restages it,
+and then runs `perlcritic --profile .perlcriticrc` over the same files. It needs
+no opinion about which profile that is: the question at the top of this document
+already decided, and the answer was copied to that name. Tracked in the
+repository rather than only in `.git/hooks`, because git does not version or
+clone hooks, so an untracked one exists on exactly one machine.
+
+Critic runs after the tidy pass, never before, because the tidy pass rewrites
+those files and stages what it wrote -- so the bytes critic has to judge are the
+ones that will land, not the ones you saved. A machine with no perlcritic skips
+the pass and says so, the way it already does for perltidy; `dzil test` runs the
+same profile, so nothing reaches CPAN unjudged.
 
 It is there because a `.perltidyrc` on its own does not keep a tree tidy.
 Tidying a file you are changing three lines of buries the change in a hundred
@@ -243,6 +252,13 @@ tests -- compile, POD syntax, POD coverage, kwalitee, unused variables -- but
 none of them test what your code does. `dzil test` passing on a distribution
 with an empty `t/` means the packaging is fine and says nothing else. See
 [perl-slop:testing-perl](../testing-perl/testing-perl.md).
+
+**A test file with no shebang.** `Documentation::RequirePackageMatchesPodName`
+reads a file without one as a module, and then wants its POD `NAME` to match the
+package -- which in a `.t` is `main`. The message is "Pod NAME on line 7 does not
+match the package declaration", and it points nowhere near the cause. Start every
+test with `#!/usr/bin/env perl` and it reads it as the program it is. The hook
+catches this before the commit; `dzil test` catches it the day you release.
 
 **A perl version said in one place and not the others.** Which version you are
 targeting is the question at the top of this document; this is what happens when

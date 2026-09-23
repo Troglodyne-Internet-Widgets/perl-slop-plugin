@@ -118,6 +118,21 @@ subtest 'the skill tells the same story as the files' => sub {
     like( $skill, qr/perlcriticrc\.compat/, 'and names the second profile so it can be copied' );
 };
 
+subtest 'the hook judges what it tidied, with the profile that was copied' => sub {
+    my $hook = slurp("$TEMPLATES/pre-commit");
+
+    like( $hook, qr/perlcritic\s+--profile\s+\.perlcriticrc/, 'the hook runs critic against the one profile the scaffold writes' );
+    unlike( $hook, qr/perlcriticrc\.compat/, 'and has no opinion about which profile that is, because the scaffold decided' );
+
+    # Order matters: the tidy pass rewrites the files and stages what it wrote,
+    # so critic has to read those bytes rather than the ones the author saved.
+    my $tidy_at   = index( $hook, 'perltidy -b' );
+    my $critic_at = index( $hook, 'perlcritic --profile' );
+    ok( $tidy_at > 0 && $critic_at > $tidy_at, 'and runs it after the tidy pass rather than before' );
+
+    like( $hook, qr/exit\s+1/, 'a refusal stops the commit' );
+};
+
 subtest 'what the profiles read is scaffolded and shipped' => sub {
 
     # PodSpelling reads a stopword list, and the author tests run critic inside

@@ -1,12 +1,23 @@
 #!/bin/sh
 
-# Auto-tidy staged Perl before it lands.
+# Tidy staged Perl, then judge it against .perlcriticrc, before either lands.
 #
 # There is a .perltidyrc, and a tree stays tidy to it only if something makes it.
 # Left to people, it does not: tidying a file you are changing three lines of
 # buries the change in a hundred lines of reformatting, so the reasonable thing
 # is to skip it, and the tree drifts until a mass tidy is the only way back.
 # One commit's worth at a time is small enough that nobody has to weigh it up.
+#
+# perlcritic is here for the other half of that. `dzil test` runs the profile
+# too, through [@TestingMania], but that is the pass you run before a release --
+# by which point the objection is twenty commits old and the person who can
+# answer it has moved on. Here it is about the diff in front of you.
+#
+# There is one profile, .perlcriticrc, and which one that is was decided when
+# this distribution was scaffolded: the packaging-perl skill asks which perl you
+# are targeting and copies the matching profile to that name. So the hook needs
+# no opinion about versions -- the file it reads is already the right one, and
+# changing your floor means replacing that file rather than editing this.
 #
 # Install it: cp git-hooks/pre-commit .git/hooks/
 #
@@ -18,53 +29,96 @@
 #
 # .t is in there because test files are often not executable, and the shebang
 # rule alone would then tidy whichever ones happen to be and let the rest drift.
+#
+# Both passes read the working tree rather than the index, so a file staged in
+# part is judged whole. That is deliberate: perltidy rewrites the file on disk
+# and the hook stages what it wrote, so the working copy is what lands anyway,
+# and two passes disagreeing about which bytes they looked at would be worse to
+# own than this.
+#
+# Both run from the top of the working tree, which is where git runs a hook and
+# the only place they work at all: the profile names .preferred_modules.ini and
+# .pod_stopwords by relative path.
 
 # Redirect output to stderr.
 exec 1>&2
-
-if ! command -v perltidy >/dev/null 2>&1
-then
-    echo "pre-commit: perltidy is not on PATH, skipping the tidy pass."
-    exit 0
-fi
 
 # ACMR so that a file deleted in this commit is not handed to perltidy, which
 # would fail on a path that is no longer there.
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
 
-to_tidy=''
+perl_files=''
 for file in $staged
 do
     test -f "$file" || continue
 
     case "$file" in
         *.pm|*.pl|*.PL|*.t)
-            to_tidy="$to_tidy $file"
+            perl_files="$perl_files $file"
             continue
             ;;
     esac
 
     if test -x "$file" && head -n 1 "$file" | grep -Eq '^#!.*perl'
     then
-        to_tidy="$to_tidy $file"
+        perl_files="$perl_files $file"
     fi
 done
 
-# Quoted here, because a bare [ $to_tidy ] is a syntax error the moment there is
-# more than one file -- which would stop the hook working in exactly the commits
-# that need it most.  Unquoted below, because there the word splitting is what
-# turns one string into an argument list.
-if [ -n "$to_tidy" ]
+# Quoted here, because a bare [ $perl_files ] is a syntax error the moment there
+# is more than one file -- which would stop the hook working in exactly the
+# commits that need it most.  Unquoted below, because there the word splitting is
+# what turns one string into an argument list.
+if [ -z "$perl_files" ]
+then
+    :
+elif command -v perltidy >/dev/null 2>&1
 then
     echo "Auto-tidying perl changes..."
 
     # -bext='/' makes perltidy delete the backup it would otherwise leave
     # sitting next to the file as <name>.bak.
-    perltidy -b -bext='/' $to_tidy || {
+    perltidy -b -bext='/' $perl_files || {
         echo "pre-commit: perltidy failed, leaving the commit alone."
         exit 1
     }
 
-    git update-index --add $to_tidy
+    git update-index --add $perl_files
     echo "Done."
+else
+    echo "pre-commit: perltidy is not on PATH, skipping the tidy pass."
+fi
+
+# After the tidy pass and never before.  The tidy pass rewrites these files and
+# stages what it wrote, so what critic has to judge is the bytes that will land
+# rather than the ones you saved -- and if you ever turn [CodeLayout::
+# RequireTidyCode] back on, running it first would fail the commit over the one
+# thing the hook had already set out to fix by itself.
+#
+# Three branches rather than two conditions and one else.  Staging nothing the
+# profile judges -- a commit of documentation, say -- is not the same thing as
+# having no perlcritic to judge it with, and one else says the second whenever
+# the first is true.
+if [ -z "$perl_files" ]
+then
+    echo "Nothing staged that the profile judges."
+elif command -v perlcritic >/dev/null 2>&1
+then
+    echo "Running perlcritic..."
+
+    if ! perlcritic --profile .perlcriticrc $perl_files
+    then
+        echo
+        echo "pre-commit: perlcritic refused the above.  Either fix them, or say"
+        echo "why with a '## no critic (Policy::Name)' and the reason beside it."
+        echo "To commit without these checks at all: git commit --no-verify"
+        exit 1
+    fi
+
+    echo "Done."
+else
+    # Skipped rather than fatal, for the same reason the tidy pass is: a machine
+    # without perlcritic can still commit, and `dzil test` will not let the
+    # distribution be released without one.
+    echo "pre-commit: perlcritic is not on PATH, skipping the critic pass."
 fi
