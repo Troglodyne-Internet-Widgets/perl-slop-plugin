@@ -183,7 +183,8 @@ without it. See below.
 person once per address they have ever committed from.
 
 **`git-hooks/pre-commit`** runs perltidy over the Perl you staged, restages it,
-and then runs `perlcritic --profile .perlcriticrc` over the same files. It needs
+runs `perlcritic --profile .perlcriticrc` over the same files, and then runs the
+tests. It needs
 no opinion about which profile that is: the question at the top of this document
 already decided, and the answer was copied to that name. Tracked in the
 repository rather than only in `.git/hooks`, because git does not version or
@@ -198,6 +199,13 @@ open. Every other policy still applies there, which is more than a release does.
 A machine with no perlcritic skips the pass and says so, the way it already does
 for perltidy; `dzil test` runs the same profile over `lib/`, so nothing reaches
 CPAN unjudged.
+
+The tests run last, as `prove -lm -j8 t/`, so they read the files that the tidy
+pass wrote. They run for every commit, not only a commit of Perl. A change to
+`dist.ini`, a `share/` file or a fixture can break a test as a module can. The
+hook runs all of `t/`, because it cannot know which tests a change reaches. If a
+test fails, the hook stops the commit and prints the command that shows why:
+`prove -lv t/<file>.t`.
 
 It is there because a `.perltidyrc` on its own does not keep a tree tidy.
 Tidying a file you are changing three lines of buries the change in a hundred

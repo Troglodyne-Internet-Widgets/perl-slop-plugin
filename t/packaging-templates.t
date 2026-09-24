@@ -19,11 +19,13 @@ the scaffold and dist.ini still agree with it.
 
 Core-only on purpose: this asserts on the text of the templates, so it runs
 wherever the plugin does rather than only where Perl::Critic and twenty policy
-distributions are installed.
+distributions are installed.  The one exception runs the pre-commit hook, with
+git and sh, on a commit that gives perltidy and perlcritic nothing to judge.
 
 =cut
 
 use Test::More;
+use File::Temp qw{tempdir};
 use FindBin;
 
 my $SKILL     = "$FindBin::Bin/../skills/packaging-perl";
@@ -145,6 +147,37 @@ subtest 'the hook judges what it tidied, with the profile that was copied' => su
     like( $test_pass, qr/--exclude\s+Documentation::RequirePod/, 't/ is judged without the POD requirement' );
     like( $test_pass, qr/--profile\s+\.perlcriticrc/,            'and by the same profile as everything else' );
     unlike( $lib_pass, qr/--exclude/,                            'while a module is still asked for its POD' );
+};
+
+subtest 'the hook runs the tests last, and a failing test stops the commit' => sub {
+    my $hook = slurp("$TEMPLATES/pre-commit");
+    ok( index( $hook, 'prove -lm -j8 t/' ) > index( $hook, 'perlcritic --profile' ), 'the tests run after the critic pass, on the files it judged' );
+
+    # Staged is a README, so neither Perl pass has anything to do, and what
+    # decides is the suite alone.  The tests themselves are not staged: the
+    # hook runs t/ whatever the commit holds.
+    my $run = sub {
+        my (%tests) = @_;
+        my $root = tempdir( CLEANUP => 1 );
+        mkdir "$root/t" or die $!;
+        foreach my $name ( keys %tests, '../README' ) {
+            open( my $fh, '>', "$root/t/$name" ) or die $!;
+            print {$fh} $tests{$name} // "words\n";
+            close($fh) or die $!;
+        }
+        system( 'git', '-C', $root, 'init', '-q' ) == 0 or die 'git init';      ## no critic (ProhibitShellDispatch) -- the hook reads a real index
+        system( 'git', '-C', $root, 'add', 'README' ) == 0 or die 'git add';    ## no critic (ProhibitShellDispatch)
+        my $out = `cd $root && sh $TEMPLATES/pre-commit 2>&1`;                    ## no critic (ProhibitShellDispatch) -- run the way git runs it
+        return ( $? >> 8, $out );
+    };
+
+    my $pass = "use Test::More;\nok(1);\ndone_testing;\n";
+    my ( $exit, $out ) = $run->( 'pass.t' => $pass );
+    is( $exit, 0, 'a suite that passes lets the commit through' ) or diag $out;
+
+    ( $exit, $out ) = $run->( 'pass.t' => $pass, 'fail.t' => "use Test::More;\nok(0, 'broken');\ndone_testing;\n" );
+    is( $exit, 1, 'a failing test stops it' ) or diag $out;
+    like( $out, qr{prove[ ]-lv[ ]t/<file>[.]t}, 'and the hook says how to see why' );
 };
 
 subtest 'what the profiles read is scaffolded and shipped' => sub {

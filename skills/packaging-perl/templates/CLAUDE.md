@@ -1,32 +1,31 @@
 # CLAUDE.md
 
-How to work in this repository.  What the code *is* and how it is written are in
-the POD and in the files pointed at below; this is the procedure.
+This file is the procedure for work in this repository.  The POD and the files
+named below say what the code is and how it is written.
 
 {{DIST}} is <one or two sentences: what the distribution does, and the two or
-three files somebody would have to read first>.
+three files that a newcomer must read first>.
 
 ## Read the code before you change it
 
-**When a request means consulting the code here at all -- answering a question
-about it, tracking something down, or editing it -- invoke
-`perl-slop:reading-perl` first.**
+Before you answer a question about the code here, look for something in it, or
+edit it, invoke `perl-slop:reading-perl`.
 
-Most of what you will touch is older than the conversation about it, and the
-line that looks pointless is usually the scar left by something that went wrong
-once.  The reason is in the commit, not the file.  This is a reading pass, done
-before the first edit rather than after the tests fail.
+Most of the code here is older than the conversation about it.  A line that
+looks pointless is usually the scar of something that went wrong once.  The
+reason is in the commit, not in the file.  So read before the first edit, not
+after the tests fail.
 
-It is also the pass that asks whether the thing you are about to write is
-already here under a name you did not think to search for.  Two subs doing one
-job is the defect, whichever is better.
+The same pass asks whether the code that you want to write is already here,
+under a name that you did not search for.  Two subs that do one job are a
+defect, whichever one is better.
 
 ## What perl this runs on
 
-`use {{PERL_FLOOR}}`, in every module and every test, and `perl:` in
-`prereqs.yml` says the same thing.  `.perlcriticrc` assumes it: the header of
-that file names the policies the version pays for, so raising or lowering the
-floor is a change to the profile as well as to the `use` lines.
+Every module and every test says `use {{PERL_FLOOR}}`, and `perl:` in
+`prereqs.yml` says the same.  `.perlcriticrc` depends on it.  The header of
+that file names the policies that this version of perl makes unnecessary.  So
+if you raise or lower the floor, change the profile as well as the `use` lines.
 
 ## Where it is written down
 
@@ -37,68 +36,85 @@ floor is a change to the profile as well as to the `use` lines.
 | `Changes` | what changed and when, per release |
 | `dist.ini` | the build, and what has to be installed to run it |
 
-<Add the documents this distribution actually has.  A table nobody has to guess
-at is the point; delete the rows that do not apply.>
+<Add the documents that this distribution has.  The point is a table that
+nobody has to guess at.  Delete the rows that do not apply.>
 
 ## Finishing a changeset
 
-Before you commit, in this order:
+Before you commit, apply these skills in this order:
 
-1. **`perl-slop:data-perl`** -- is the data defined, coerced, validated and
-   scoped the way perl wants it to be.
-2. **`perl-slop:testing-perl`** -- does every behaviour you added or changed
-   have a test, and is it the right kind.  Then run them.
-3. **`perl-slop:reviewing-perl`** -- read the whole diff back against it.  This
-   is the pass that catches the second copy of something the library already
-   does, the shelling out, and the comment that belongs in the commit message.
+1. `perl-slop:data-perl`: make sure that the data is defined, coerced,
+   validated and scoped in the way that perl expects.
+2. `perl-slop:testing-perl`: make sure that each behavior that you added or
+   changed has a test, and that the test is the right kind.
+3. `perl-slop:reviewing-perl`: read the whole diff back against it.  This pass
+   finds a second copy of something that the library already does.  It also
+   finds a call out to the shell, and a comment that belongs in the commit
+   message.
 
-Then the mechanical ones:
+Then run `podchecker` on each changed file.  Run `perl -Ilib -c` on each
+changed script that no test loads, because the tests do not compile it.
 
-    perl -Ilib -c <each changed .pm or script>
-    perlcritic --profile .perlcriticrc lib/ t/
-    podchecker <each changed file>
-    prove -lm -j8 t/
+The pre-commit hook does the rest.  It tidies the Perl that you staged, runs
+perlcritic on it, and runs the tests.  If a step fails, the hook stops the
+commit and prints the reason.  Do not run `perltidy` or `perlcritic` yourself,
+and do not run the tests to decide whether a change is ready to commit.
 
-`perltidy` runs itself, if the hook is installed: `cp git-hooks/pre-commit
-.git/hooks/`.  Do that once, in any checkout you intend to commit from -- git
-does not do it for you, and a hook nobody installed is a tree that drifts.
+The hook names each test that failed.  Its output does not say why.  If a test
+fails, run that file yourself with `-v`, and read the output:
+
+```
+prove -lv t/<file>.t
+```
+
+Do the same to see a new test fail before you fix what it tests.
+
+In each clone that you commit from, install the hook once.  Git does not
+install it for you, and without the hook the tree drifts from its style:
+
+```
+cp git-hooks/pre-commit .git/hooks/
+```
 
 ## When something is slow
 
-**`perl-slop:profiling-perl`.**  Measure before you conclude, and measure again
-after you change something.  "It is just slow" is not a finding; a line number
-and a percentage is.
+Use `perl-slop:profiling-perl`.  Measure before you conclude anything, and
+measure again after a change.  "It is just slow" is not a finding.  A line
+number and a percentage is a finding.
 
 ## Releasing
 
-**`perl-slop:packaging-perl`** is how this distribution was scaffolded and what
-its `dist.ini` means.  It also has the half-dozen things that quietly stop
-`dzil release` working, which are worth reading before the first one rather than
-during it.
+`perl-slop:packaging-perl` made this distribution, and it explains what
+`dist.ini` means.  It also lists the problems that stop `dzil release` with no
+clear error.  Read it before the first release, not during it.
 
-    dzil authordeps --missing | cpanm --notest
-    dzil build && dzil test
+```
+dzil authordeps --missing | cpanm --notest
+dzil build && dzil test
+```
 
 ## Commits and pull requests
 
-Branch, never commit to the default branch.
+Make a branch.  Do not commit to the default branch.
 
-A commit message here says what was wrong and why this is the fix -- in prose,
-in the imperative, naming the behaviour rather than the diff ("Ask the pool
-whether it takes O_DIRECT, rather than guessing from its name").  That is not
-decoration: `perl-slop:reading-perl` is somebody arriving at your line in two
-years with `git blame`, and the message is the only thing that will still be
-able to tell them why.  Which is also why the *why* goes there rather than in a
-comment.
+A commit message here says what was wrong and why the change fixes it.  Write
+it in prose and in the imperative mood.  Name the behavior, not the diff, for
+example "Ask the pool whether it takes O_DIRECT, rather than guessing from its
+name".  The message has a job.  `perl-slop:reading-perl` describes a person who
+finds your line with `git blame` two years from now.  The message is the only
+thing that can still tell that person why.  For the same reason, the why goes
+in the message and not in a comment.
 
-When you have verified something, say what you ran and what it said.  A claim
-that the tests pass is worth the line that shows them passing.  So is a claim
-about work you did: the URL `gh pr create` gave back, the sha `git push`
-reported.  A PR number nobody can open is worse than no number.
+After you make sure that something works, say what you ran and what it said.
+A claim that the tests pass needs the line that shows them passing.  A claim
+about your own work needs its evidence too, such as the URL from `gh pr
+create` or the sha from `git push`.  A PR number that nobody can open is worse
+than no number.
 
-Stack a branch on another only when the *code* depends on it, never when only
-the verification does.  A change whose tests cannot go green until somebody
-else's fix lands is still an independent change: open it against the default
-branch and say in the description what has to land first.  Stacked, it merges
-into whatever its base happens to be -- and if that base reached the default
-branch by some other route, the child lands nowhere and nothing says so.
+If the code of a branch depends on another branch, stack it on that branch.
+If only a test of it depends on the other branch, do not stack it.  A change
+whose tests need a fix from somebody else is still an independent change.
+Open it against the default branch, and say in the description what must
+merge first.  A stacked branch merges into its base, whatever that base is.
+If the base reached the default branch by another route, the stacked change
+reaches nowhere, and nothing says so.

@@ -1,6 +1,7 @@
 #!/bin/sh
 
-# Tidy staged Perl, then judge it against .perlcriticrc, before either lands.
+# Tidy staged Perl, judge it against .perlcriticrc, then run the tests, before
+# any of it lands.
 #
 # There is a .perltidyrc, and a tree stays tidy to it only if something makes it.
 # Left to people, it does not: tidying a file you are changing three lines of
@@ -156,4 +157,20 @@ else
     # without perlcritic can still commit, and `dzil test` will not let the
     # distribution be released without one.
     echo "pre-commit: perlcritic is not on PATH, skipping the critic pass."
+fi
+
+# Last, because the tests read the files that the tidy pass wrote.  Whatever is
+# staged, and not only Perl: a change to dist.ini, a share/ file or a fixture
+# breaks a test as surely as a change to a module does.  The whole of t/, since
+# nothing here knows which tests a change can reach, and a distribution's suite
+# is small enough to run on each commit.  -l for lib/, as `dzil test` finds it.
+if [ -d t ]
+then
+    echo "Running the tests..."
+    prove -lm -j8 t/ || {
+        echo "pre-commit: the tests above failed.  To see why, run each failing file"
+        echo "on its own:  prove -lv t/<file>.t"
+        echo "To commit without these checks at all: git commit --no-verify"
+        exit 1
+    }
 fi
