@@ -171,6 +171,16 @@ subtest 'what the profiles read is scaffolded and shipped' => sub {
     my @sorted = sort { lc $a cmp lc $b or $a cmp $b } @words;
     is_deeply( \@words, \@sorted, 'the stopword list is sorted' );
     is( scalar( keys %stop ), scalar @words, 'and has each word once' );
+
+    # PodSpelling accepts a word whose lowercase form is a stopword, so a
+    # capitalized copy of a lowercase entry does nothing.
+    my @redundant = grep { $_ ne lc $_ && ucfirst( lc $_ ) eq $_ && $stop{ lc $_ } } @words;
+    is_deeply( \@redundant, [], 'no capitalized copy of a word it has in lowercase' );
+
+    # aspell is asked for American English, so a British spelling is one the
+    # POD should not be using in the first place.
+    my @british = grep { m/is(?:e|es|ed|ing|ation)$/ && $stop{ ( my $us = $_ ) =~ s/is(e|es|ed|ing|ation)$/iz$1/r } } @words;
+    is_deeply( \@british, [], 'and no British spelling of a word it has in American' );
     like( $skill, qr/cp[^\n]*pod_stopwords/, 'and the scaffold copies it' );
 
     # Every policy outside Perl::Critic's own distribution needs a line, or a
