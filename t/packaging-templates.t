@@ -163,6 +163,14 @@ subtest 'what the profiles read is scaffolded and shipped' => sub {
     # of these, so a stopword list without them fails every new distribution.
     my %stop = map { $_ => 1 } grep { length && !m/^#/ } split /\n/, slurp("$TEMPLATES/pod_stopwords");
     ok( $stop{$_}, "the stopword list has $_, from the generated licence text" ) foreach qw{MERCHANTABILITY NONINFRINGEMENT sublicense};
+    ok( $stop{bugtracker}, 'and bugtracker, which no dictionary has' );
+
+    # Sorted without regard to case and once each, as the file's header says, so
+    # that adding a word is a one-line diff.
+    my @words = grep { length && !m/^#/ } split /\n/, slurp("$TEMPLATES/pod_stopwords");
+    my @sorted = sort { lc $a cmp lc $b or $a cmp $b } @words;
+    is_deeply( \@words, \@sorted, 'the stopword list is sorted' );
+    is( scalar( keys %stop ), scalar @words, 'and has each word once' );
     like( $skill, qr/cp[^\n]*pod_stopwords/, 'and the scaffold copies it' );
 
     # Every policy outside Perl::Critic's own distribution needs a line, or a
