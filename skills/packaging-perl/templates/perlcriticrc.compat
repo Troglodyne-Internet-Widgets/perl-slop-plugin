@@ -5,7 +5,7 @@
 # control; this one is for code that does not.  The packaging-perl skill asks
 # which you are writing before it copies one, because the answer decides more
 # than this file: it decides the use line in every module and test, and perl: in
-# prereqs.yaml.
+# prereqs.yml.
 #
 # The difference is the five policies below.  The other profile leaves them out
 # because a modern perl refuses what they report, and none of that reasoning

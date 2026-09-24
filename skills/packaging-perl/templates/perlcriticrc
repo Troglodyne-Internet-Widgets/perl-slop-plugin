@@ -5,7 +5,7 @@
 # and perlcriticrc.compat is for code that runs on whatever perl is already
 # installed.  The packaging-perl skill asks which you are writing before it
 # copies one, because the answer decides more than this file: it decides the
-# use line in every module and test, and perl: in prereqs.yaml.
+# use line in every module and test, and perl: in prereqs.yml.
 #
 # The difference between the two is five policies.  A modern perl refuses what
 # they report, so naming them here would buy nothing:
