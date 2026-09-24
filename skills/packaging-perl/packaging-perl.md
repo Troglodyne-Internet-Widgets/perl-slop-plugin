@@ -22,7 +22,7 @@ document is why each piece is there.
 
 Ask the person what this has to run on. It is the first question, not a detail
 to settle later: the answer picks the critic profile, the `use` line in every
-module and every test, and `perl:` in `prereqs.yaml`, and changing it afterwards
+module and every test, and `perl:` in `prereqs.yml`, and changing it afterwards
 means editing all of them at once.
 
 Two answers, and they make genuinely different distributions.
@@ -80,6 +80,7 @@ mkdir -p newdist/lib newdist/t newdist/git-hooks && cd newdist && git init
 cp $SKILL/templates/dist.ini              dist.ini
 cp $SKILL/templates/weaver.ini            weaver.ini
 cp $SKILL/templates/Changes               Changes
+cp $SKILL/templates/prereqs.yml           prereqs.yml
 cp $SKILL/templates/LICENSE               LICENSE
 cp $SKILL/templates/perlcriticrc          .perlcriticrc   # or perlcriticrc.compat
 cp $SKILL/templates/perltidyrc            .perltidyrc
@@ -111,7 +112,7 @@ Then substitute. The placeholders are the same in every file:
 | `{{DATE}}` | today, `YYYY-MM-DD` |
 
 ```
-sed -i 's/{{DIST}}/Configd/; s/{{VERSION}}/0.001/; s/{{PERL_FLOOR}}/5.040/; ...' dist.ini weaver.ini Changes LICENSE .gitignore .mailmap CLAUDE.md
+sed -i 's/{{DIST}}/Configd/; s/{{VERSION}}/0.001/; s/{{PERL_FLOOR}}/5.040/; ...' dist.ini weaver.ini Changes prereqs.yml LICENSE .gitignore .mailmap CLAUDE.md
 grep -rn '{{' . && echo 'still some to fill in'
 ```
 
@@ -171,8 +172,9 @@ and put its authordep line back when you do.
 "use this rather than that" lives — `Cpanel::JSON::XS` over `JSON::PP`,
 `YAML::XS` over `YAML::PP`, `Crypt::PRNG` over `rand`. `.pod_stopwords` is read
 by `Documentation::PodSpelling`, which runs aspell over your POD: it holds the
-vocabulary no dictionary has, and your own surname, which appears in the AUTHORS
-section Pod::Weaver generates. A misspelling does not belong in it.
+vocabulary no dictionary has, the licence words from the COPYRIGHT section
+Pod::Weaver generates, and the names in that section and in AUTHORS: yours and
+the copyright holder's, which you add. A misspelling does not belong in it.
 
 **`Changes`** exists because `[CheckChangesHasContent]` refuses to release
 without it. See below.
@@ -251,6 +253,18 @@ than yours: yours has them installed already.
 `dist.ini` at build time. A version in the source is a second answer to the same
 question, and it is the one that goes stale.
 
+**A `$VERSION` line above `use strict`.** Left to its default, `[PkgVersion]`
+inserts `$Foo::VERSION = ...` straight after the `package` line, and the compat
+profile's `RequireUseStrict` reports it in the built module: the author tests
+fail on a distribution that passed perlcritic in the tree. The template sets
+`use_package = 1`, which writes `package Foo 0.001;` instead and adds no line.
+
+**A prereqs file under a name nobody reads.** `[PrereqsFile]` reads
+`prereqs.yml` and `prereqs.json`. Its `filename` option cannot be set to one
+file from `dist.ini`, so `prereqs.yaml` is not an alternative spelling: it is
+ignored, and nothing says so. The perl floor in it then reaches the metadata only
+because `[AutoPrereqs]` also read the `use` line.
+
 **Nothing in `t/`.** `[@TestingMania]` generates a pile of author and release
 tests -- compile, POD syntax, POD coverage, kwalitee, unused variables -- but
 none of them test what your code does. `dzil test` passing on a distribution
@@ -272,7 +286,7 @@ modules and not your tests.
 targeting is the question at the top of this document; this is what happens when
 the answer is written down inconsistently. Say it in three places and keep them
 equal: the `use` line in every module, the `use` line in every test, and `perl:`
-in `prereqs.yaml`.
+in `prereqs.yml`.
 
 `[@TestingMania]` includes `Test::MinimumVersion`, which reads the syntax rather
 than the declaration, so a declaration lower than the code fails `dzil test`

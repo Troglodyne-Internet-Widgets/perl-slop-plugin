@@ -158,6 +158,11 @@ subtest 'what the profiles read is scaffolded and shipped' => sub {
     }
 
     ok( length slurp("$TEMPLATES/pod_stopwords"), 'the stopword list is a template with something in it, so there is something to copy' );
+
+    # weaver.ini's licence text is in every built module, and aspell knows none
+    # of these, so a stopword list without them fails every new distribution.
+    my %stop = map { $_ => 1 } grep { length && !m/^#/ } split /\n/, slurp("$TEMPLATES/pod_stopwords");
+    ok( $stop{$_}, "the stopword list has $_, from the generated licence text" ) foreach qw{MERCHANTABILITY NONINFRINGEMENT sublicense};
     like( $skill, qr/cp[^\n]*pod_stopwords/, 'and the scaffold copies it' );
 
     # Every policy outside Perl::Critic's own distribution needs a line, or a
@@ -173,6 +178,36 @@ subtest 'what the profiles read is scaffolded and shipped' => sub {
         unlike( $profile, qr/^\[ProhibitUnusedDefinitions\]$/m, 'a library scaffold does not enable ProhibitUnusedDefinitions' );
     }
     unlike( $dist, qr/authordep[^\n]*ProhibitUnusedDefinitions/, 'and does not ask for it to be installed' );
+};
+
+subtest 'the version dzil stamps is not code above use strict' => sub {
+
+    # PkgVersion inserts a $VERSION line after the package line unless it is told
+    # to write it into the package line, and RequireUseStrict reports that line
+    # in the built module.  So a profile that names the policy needs the option.
+    my ($pkgversion) = $dist =~ m/^\[PkgVersion\]\n((?:[^\[\n][^\n]*\n)*)/m;
+    ok( defined $pkgversion, 'dist.ini has a [PkgVersion] section' ) or return;
+
+    ok( enables( $compat, 'TestingAndDebugging::RequireUseStrict' ), 'the compat profile names RequireUseStrict' );
+    like( $pkgversion, qr/^use_package\s*=\s*1$/m, 'so PkgVersion writes the version into the package line' );
+};
+
+subtest 'the perl floor is written where PrereqsFile reads it' => sub {
+
+    # PrereqsFile reads prereqs.yml and prereqs.json, and its filename option
+    # cannot name one file from dist.ini, so any other name is ignored silently.
+    like( $dist, qr/^\[PrereqsFile\]$/m, 'dist.ini reads a prereqs file' );
+
+    my $prereqs = slurp("$TEMPLATES/prereqs.yml");
+    like( $prereqs, qr/^\s+perl:\s*'\{\{PERL_FLOOR\}\}'$/m, 'the template declares the perl floor' );
+    like( $skill, qr/cp[^\n]*templates\/prereqs\.yml\s+prereqs\.yml/, 'the scaffold copies it under the name PrereqsFile reads' );
+    like( $skill, qr/sed[^\n]*\bprereqs\.yml\b/,                        'and fills in its placeholder' );
+
+    foreach my $file ( "$SKILL/packaging-perl.md", map {"$TEMPLATES/$_"} qw{CLAUDE.md perlcriticrc perlcriticrc.compat} ) {
+        my $text = slurp($file);
+        my @told = $text =~ m/(prereqs\.yaml)(?![^\n]*not an alternative)/g;
+        is( scalar @told, 0, "$file tells nobody to write prereqs.yaml" );
+    }
 };
 
 done_testing();
