@@ -262,6 +262,21 @@ subtest 'a post to an issue or a pull request waits for information-security' =>
     is( $mcp->( 'mcp__github__list_issue_comments',    $none ), undef, 'and so is one that lists comments' );
 };
 
+subtest 'a command that signals a process waits for killing-processes' => sub {
+    my $none   = transcript();
+    my $loaded = transcript( skill( 's1', 'perl-slop:killing-processes' ) );
+
+    foreach my $command ( 'kill -HUP 1234', "pkill -f 'tail -f /bogus'", 'killall bogusd', 'pgrep -f -n bogus', 'cd /bogus && kill $(cat pid)', 'kill -9 $(pgrep bogus)', 'pgrep bogus | xargs -r kill', 'sudo kill 1234', "echo hi\nkill 1234" ) {
+        like( run_bash( $command, $none ), qr/killing-processes/, "refused: $command" );
+        is( run_bash( $command, $loaded ), undef, "allowed once it is loaded: $command" );
+    }
+    is( run_bash( 'ps -o pid,args -p 1234',      $none ), undef, 'ps is allowed' );
+    is( run_bash( 'git log --grep=kill',         $none ), undef, 'and so is kill as a word inside another command' );
+    is( run_bash( 'systemctl kill-mode',         $none ), undef, 'and kill as part of a longer word' );
+    is( run_bash( "cat <<EOF\nkill 1234\nEOF\n", $none ), undef, 'and kill in the body of a heredoc' );
+    like( run_bash( 'gh pr create --title x --body y && kill 1', transcript( skill( 's1', $PROSE ) ) ), qr/killing-processes/, 'a post that also kills waits for both' );
+};
+
 subtest 'a repository can ask for more skills in .perl-slop.json' => sub {
     my $config = $JSON->encode(
         {

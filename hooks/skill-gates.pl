@@ -16,7 +16,7 @@ use Time::Local    ();
 
 =head1 NAME
 
-hooks/skill-gates.pl - refuse an edit, a commit or a post until the skills that it needs are loaded
+hooks/skill-gates.pl - refuse an edit, a commit, a post or a signal until the skills that it needs are loaded
 
 =head1 DESCRIPTION
 
@@ -40,11 +40,12 @@ stopping work.  C<PERL_SLOP_GATES=0> in the environment turns it off.
 =cut
 
 # edit and commit are for Perl.  prose is for anything written in any
-# language, and for anything said to anyone.
+# language, and for anything said to anyone.  signal is for any process.
 our %BASE = (
     edit   => ['perl-slop:reading-perl'],
     commit => [ 'perl-slop:data-perl', 'perl-slop:testing-perl', 'perl-slop:reviewing-perl' ],
     prose  => ['perl-slop:information-security'],
+    signal => ['perl-slop:killing-processes'],
 );
 
 our $CONFIG_NAME = '.perl-slop.json';
@@ -88,6 +89,15 @@ our $PUBLISH_RX = qr{
 our $PUBLISH_VERB_RX = qr/create|add|update|edit|post|submit|reply|merge/;
 our $PUBLISH_NOUN_RX = qr/issue|pull|merge_request|comment|review|discussion|release|note/;
 our $PUBLISH_TOOL_RX = qr/\Amcp__.*(?:$PUBLISH_VERB_RX.*$PUBLISH_NOUN_RX|$PUBLISH_NOUN_RX.*$PUBLISH_VERB_RX)/i;
+
+# A Bash command that signals a process, or picks processes by pattern.  pgrep
+# is here because a pattern it matches is how the wrong PID gets chosen.
+our $SIGNAL_RX = qr{
+    $COMMAND_START_RX
+    (?:sudo\s+(?:-\S+\s+)*)?
+    (?:xargs\s+(?:-\S+\s+)*)?
+    (?:kill|pkill|killall|pgrep)(?![\w-])
+}x;
 
 our $SLOW_RX = qr/\b(?:slow(?:er|ly|ness)?|profil\w*|time[ds]?[ -]?out|timing out|performance|takes? (?:too )?long|faster)\b/i;
 
@@ -143,6 +153,10 @@ sub decide {
         my $dir     = command_dir( $command, $input->{cwd} );
         if ( is_commit($command) ) {
             my $out = commit_gate( $input, $dir );
+            return $out if $out;
+        }
+        if ( is_signal($command) ) {
+            my $out = signal_gate($input);
             return $out if $out;
         }
         return publish_gate($input) if is_publish($command);
@@ -233,12 +247,36 @@ until C<perl-slop:information-security> is loaded.
 
 sub publish_gate {
     my ($input) = @_;
+    return load_gate( $input, $BASE{prose}, 'a post to an issue, a pull request, a review, a release or a gist', 'post again' );
+}
+
+=head2 $output = signal_gate(\%input)
+
+Refuses a command that signals a process, or that picks processes by pattern,
+until C<perl-slop:killing-processes> is loaded.
+
+=cut
+
+sub signal_gate {
+    my ($input) = @_;
+    return load_gate( $input, $BASE{signal}, 'a command that signals a process or picks processes by pattern', 'run it again' );
+}
+
+=head2 $output = load_gate(\%input, \@skills, $action, $retry)
+
+Refuses C<$action> until each of C<@skills> is loaded after the last
+compaction.  The refusal tells the model to load them, then to C<$retry>.
+
+=cut
+
+sub load_gate {
+    my ( $input, $skills, $action, $retry ) = @_;
 
     my $loaded  = session( $input->{transcript_path}, $input->{session_id} )->{loaded};
-    my @missing = grep { !defined is_loaded( $loaded, $_ ) } @{ $BASE{prose} };
+    my @missing = grep { !defined is_loaded( $loaded, $_ ) } @$skills;
     return if !@missing;
 
-    return deny( "Load @{[ list(@missing) ]} with the Skill tool before a post to an issue, a pull request, " . 'a review, a release or a gist, then post again.  A skill counts once it is loaded after the last compaction.' );
+    return deny( "Load @{[ list(@missing) ]} with the Skill tool before $action, then $retry.  " . 'A skill counts once it is loaded after the last compaction.' );
 }
 
 =head2 $output = prompt_reminder(\%input)
@@ -601,6 +639,19 @@ with C<gh> or C<glab>.  Text in the body of a heredoc does not count.
 sub is_publish {
     my ($command) = @_;
     return without_heredocs($command) =~ $PUBLISH_RX;
+}
+
+=head2 $bool = is_signal($command)
+
+Whether a Bash command runs C<kill>, C<pkill>, C<killall> or C<pgrep>, at its
+start, after a separator, after C<sudo> or C<xargs>, or in a command
+substitution.  Text in the body of a heredoc does not count.
+
+=cut
+
+sub is_signal {
+    my ($command) = @_;
+    return without_heredocs($command) =~ $SIGNAL_RX;
 }
 
 =head2 $command = without_heredocs($command)

@@ -47,6 +47,12 @@ apply to every project, Perl or not.
   that write, and `gh api` with a field or a write method.  It also covers MCP
   tools whose names say that they create, add, update, post, submit, reply to
   or merge one of those.
+- Before a Bash command that runs `kill`, `pkill`, `killall` or `pgrep`,
+  `perl-slop:killing-processes`, for a process in any language.  This covers
+  those commands after `sudo` or `xargs`, and in a command substitution.
+  `pkill -f` and `pgrep -f` match the whole command line, and the shell that
+  runs the command has the pattern in its own command line.  So the pattern
+  matches that shell, and a session once ended itself that way.
 - On every prompt until it is loaded, a reminder of
   `perl-slop:information-security`, because a reply to the user is prose too.
   When a prompt is about speed in a Perl project, a reminder of
