@@ -37,7 +37,9 @@ apply to every project, Perl or not.
 - Before any `git commit`, `perl-slop:information-security`, for the commit
   message.  When any changed file is Perl, also `perl-slop:data-perl`,
   `perl-slop:testing-perl` and `perl-slop:reviewing-perl`.  Each must be
-  loaded since the last commit in the session.  The changed files are what
+  loaded after the commit at `HEAD` of that repository, by its commit time.
+  A `git commit` that failed does not move `HEAD`, so it does not count, even
+  when its command exited 0.  The changed files are what
   `git status` shows, staged or not, because a command that adds and commits
   has not added anything yet when the hook runs.
 - Before a post to an issue, a pull request, a review, a release or a gist,
@@ -45,6 +47,12 @@ apply to every project, Perl or not.
   that write, and `gh api` with a field or a write method.  It also covers MCP
   tools whose names say that they create, add, update, post, submit, reply to
   or merge one of those.
+- Before a Bash command that runs `kill`, `pkill`, `killall` or `pgrep`,
+  `perl-slop:killing-processes`, for a process in any language.  This covers
+  those commands after `sudo` or `xargs`, and in a command substitution.
+  `pkill -f` and `pgrep -f` match the whole command line, and the shell that
+  runs the command has the pattern in its own command line.  So the pattern
+  matches that shell, and a session once ended itself that way.
 - On every prompt until it is loaded, a reminder of
   `perl-slop:information-security`, because a reply to the user is prose too.
   When a prompt is about speed in a Perl project, a reminder of
@@ -70,11 +78,18 @@ is one character of a name.
 A `before_commit` entry applies to any changed file that matches it, Perl or
 not.
 
-The hooks read the session transcript to learn which skills are loaded.
-Claude Code does not document the format of that file.  If a new version of
-Claude Code changes it, the hooks can stop seeing a skill that was loaded,
-and refuse every edit to Perl.  If a refusal names a skill that you know is
-loaded, turn the gates off as below, and report it.
+The hooks learn which skills are loaded from two sources.  After each Skill
+call, a PostToolUse hook records the skill and the time in a file for the
+session, in `CLAUDE_PLUGIN_DATA`.  The hooks also read the session
+transcript, which shows a skill that a user loads by its `/name`.  If either
+source shows a load, the load counts.  The record is needed because Claude Code
+writes the transcript late.  When the next hook runs, the transcript often
+does not show the last Skill call yet.  After a compaction, a SessionStart hook deletes the record.
+
+Claude Code does not document the format of the transcript.  If a new
+version of Claude Code changes it, the hooks can stop seeing a skill that a
+user loaded.  If a refusal names a skill that you know is loaded, turn the
+gates off as below, and report it.
 
 The hook is `hooks/skill-gates.pl`.  It runs on the perl on your `PATH`, with
 core modules only, and uses `Cpanel::JSON::XS` when it is installed, to read
