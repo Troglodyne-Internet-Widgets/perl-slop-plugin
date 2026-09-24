@@ -12,6 +12,9 @@ t/skill-gates.t - which edits and commits hooks/skill-gates.pl refuses, and what
 
 Each case writes a transcript in the shape that Claude Code writes one, and
 where a commit is involved, a real git repository in a temporary directory.
+Each entry of a transcript is stamped a few seconds from now, one second
+apart, and each repository's first commit is an hour old, so a load in a
+transcript always comes after the commit at HEAD unless a case says otherwise.
 
 =cut
 
@@ -20,7 +23,11 @@ use File::Temp     qw{tempdir};
 use File::Path     qw{make_path};
 use File::Basename qw{dirname};
 use JSON::PP       ();              ## no critic (PreferredModules) -- the hook it tests is core-only
+use POSIX          ();
 use FindBin;
+
+# Where the hook records loads, fresh for this run.
+$ENV{CLAUDE_PLUGIN_DATA} = tempdir( CLEANUP => 1 );
 
 require_ok("$FindBin::Bin/../hooks/skill-gates.pl");
 
@@ -38,11 +45,14 @@ sub result    { my ( $id, $error )   = @_; return { type => 'user', message => {
 sub said      { my ($text) = @_; return { type => 'user', message => { role => 'user', content => $text } } }
 sub compacted { return { type => 'system', subtype => 'compact_boundary', content => 'Conversation compacted' } }
 
+sub stamp { my ($epoch) = @_; return POSIX::strftime( '%Y-%m-%dT%H:%M:%S.000Z', gmtime $epoch ) }
+
 sub transcript {
     my (@entries) = @_;
     my $dir = tempdir( CLEANUP => 1 );
+    my $at  = time + 10;
     open( my $fh, '>', "$dir/t.jsonl" ) or die $!;
-    print {$fh} $JSON->encode($_), "\n" for @entries;
+    print {$fh} $JSON->encode( { timestamp => stamp( $at++ ), %$_ } ), "\n" for @entries;
     close($fh) or die $!;
     return "$dir/t.jsonl";
 }
@@ -52,6 +62,7 @@ sub transcript {
 sub repo {
     my (%files) = @_;
     my $root = tempdir( CLEANUP => 1 );
+    local @ENV{qw{GIT_AUTHOR_DATE GIT_COMMITTER_DATE}} = ( '@' . ( time - 3600 ) . ' +0000' ) x 2;
     git( $root, 'init',   '-q' );
     git( $root, 'config', 'user.email', 'test@test.test' );
     git( $root, 'config', 'user.name',  'Test' );
@@ -154,10 +165,45 @@ subtest 'a commit of Perl waits for the finishing skills, loaded since the last 
     is( run_bash( "cd $root && git add -A && git commit -m x", transcript(@all) ), undef, 'allowed once all of them are loaded' );
     like( run_bash( "cd $root && git commit -am x", transcript( @all[ 0 .. 2 ] ) ), qr/information-security/, 'all but one is not enough' );
 
-    my $earlier = bash( 'c1', "git commit -m earlier" );
-    like( run_bash( "git -C $root commit -m x", transcript( @all, $earlier, result('c1') ) ), qr/data-perl/, 'a commit since they were loaded means loading them again' );
-    is( run_bash( "git -C $root commit -m x", transcript( @all, $earlier, result( 'c1', 1 ) ) ), undef, 'but a commit that failed does not' );
-    is( run_bash( "git -C $root commit -m x", transcript( @all, bash( 'current', "git -C $root commit -m x" ) ) ), undef, 'and neither does the commit being decided' );
+    # A command that commits and then echoes exits 0 whether the commit
+    # happened or not, so the transcript cannot say.  HEAD can.
+    my $tried = transcript( @all, bash( 'c1', "git -C $root commit -m x; echo exit=\$?" ), result('c1') );
+    is( run_bash( "git -C $root commit -m x", $tried ), undef, 'a git commit in the transcript that made no commit does not count, though it exited 0' );
+
+    {
+        local @ENV{qw{GIT_AUTHOR_DATE GIT_COMMITTER_DATE}} = ( '@' . ( time + 3600 ) . ' +0000' ) x 2;
+        git( $root, 'add', '-A' );
+        git( $root, 'commit', '-q', '-m', 'later' );
+    }
+    write_file( $root, 'lib/Foo.pm', "package Foo;\n2;\n" );
+    like( run_bash( "git -C $root commit -am x", $tried ), qr/data-perl/, 'a commit at HEAD after they were loaded means loading them again' );
+};
+
+subtest 'a load that the hook recorded counts before the transcript shows it' => sub {
+    my $root   = repo( 'lib/Foo.pm' => "package Foo;\n1;\n" );
+    my $record = sub {
+        my ( $session, @skills ) = @_;
+        PerlSlop::SkillGates::decide( { hook_event_name => 'PostToolUse', tool_name => 'Skill', tool_input => { skill => $_ }, session_id => $session } ) for @skills;
+        return;
+    };
+    my $commit = sub { my ( $session, $transcript ) = @_; return run_bash( "cd $root && git commit -am x", $transcript // transcript(), session_id => $session ) };
+
+    $record->( 'sess-a', @FINISHING, @READING );
+    is( $commit->('sess-a'), undef, 'a commit is allowed on the record alone, with nothing in the transcript' );
+    like( $commit->('sess-b'), qr/data-perl/, 'but only in the session that loaded them' );
+    is( edit( "$root/lib/Foo.pm", transcript(), session_id => 'sess-a' ), undef, 'and an edit counts it too' );
+
+    PerlSlop::SkillGates::decide( { hook_event_name => 'SessionStart', source => 'resume', session_id => 'sess-a' } );
+    is( $commit->('sess-a'), undef, 'a session that resumes keeps its loads' );
+    PerlSlop::SkillGates::decide( { hook_event_name => 'SessionStart', source => 'compact', session_id => 'sess-a' } );
+    like( $commit->('sess-a'), qr/data-perl/, 'and a compaction forgets them' );
+
+    $record->( 'sess-c', @FINISHING );
+    like( $commit->( 'sess-c', transcript( compacted() ) ), qr/data-perl/, 'a record from before a compaction in the transcript does not count' );
+
+    $record->( '../escape', @FINISHING );
+    my @written = glob("$ENV{CLAUDE_PLUGIN_DATA}/*");
+    ok( !grep( { m/escape/ } @written ), 'a session ID that is not a plain name writes nothing' );
 };
 
 subtest 'what a commit is judged by' => sub {
@@ -277,6 +323,11 @@ subtest 'the hook as Claude Code runs it' => sub {
 
     ( $exit, $out ) = $run->('not json');
     is_deeply( [ $exit, $out ], [ 0, q{} ], 'input it cannot read allows, rather than stopping work' );
+
+    my $data = tempdir( CLEANUP => 1 );
+    ( $exit, $out ) = $run->( $JSON->encode( { hook_event_name => 'PostToolUse', tool_name => 'Skill', tool_input => { skill => $PROSE }, session_id => 'sess-run' } ), CLAUDE_PLUGIN_DATA => $data );
+    is_deeply( [ $exit, $out ], [ 0, q{} ], 'a PostToolUse on Skill prints nothing' );
+    ok( -s "$data/loads-sess-run.jsonl", 'and records the load where CLAUDE_PLUGIN_DATA says' );
 };
 
 done_testing();

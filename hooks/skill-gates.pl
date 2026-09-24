@@ -8,8 +8,11 @@ use re '/aa';
 
 use Cwd            ();
 use File::Basename ();
+use File::Path     ();
 use File::Spec     ();
 use JSON::PP       ();    ## no critic (PreferredModules) -- core, so the hook runs on any perl; see $JSON_CLASS
+use Time::HiRes    ();
+use Time::Local    ();
 
 =head1 NAME
 
@@ -22,8 +25,13 @@ Edit, Write, MultiEdit, NotebookEdit, Bash and MCP tools, and for
 UserPromptSubmit.  It reads the hook's JSON on standard input, and prints a
 decision as JSON, or nothing to allow.  F<README.md> says what each gate asks for and why.
 
+It also runs for PostToolUse on the Skill tool, to record the load, and for
+SessionStart after a compaction, to forget the loads before it.  See
+L</record_load(\%input)>.
+
 A skill counts as loaded when the transcript shows a Skill call for it, or
-the text of the skill that a user's C</name> loads, after the last compaction.
+the text of the skill that a user's C</name> loads, or when this hook recorded
+the load.  Each counts only after the last compaction.
 
 It uses core modules only, because it runs on whatever perl the machine has.
 It exits 0 whatever happens, so a fault in it allows the action rather than
@@ -118,6 +126,8 @@ sub decide {
 
     my $event = $input->{hook_event_name} // q{};
     return prompt_reminder($input) if $event eq 'UserPromptSubmit';
+    return record_load($input)     if $event eq 'PostToolUse' && ( $input->{tool_name} // q{} ) eq 'Skill';
+    return forget_loads($input)    if $event eq 'SessionStart';
     return                         if $event ne 'PreToolUse';
 
     my $tool = $input->{tool_name}  // q{};
@@ -169,8 +179,8 @@ sub edit_gate {
         $needed{$_} = 1 for configured( $root, 'before_edit', relative( $root, $file ) );
     }
 
-    my $loaded  = session( $input->{transcript_path}, $input->{tool_use_id} )->{loaded};
-    my @missing = grep { !is_loaded( $loaded, $_ ) } sort keys %needed;
+    my $loaded  = session( $input->{transcript_path}, $input->{session_id} )->{loaded};
+    my @missing = grep { !defined is_loaded( $loaded, $_ ) } sort keys %needed;
     return if !@missing;
 
     my @named = @perl ? @perl : map { $_->[0] } @$files;
@@ -180,11 +190,17 @@ sub edit_gate {
 =head2 $output = commit_gate(\%input, $dir)
 
 Refuses a commit in the checkout at C<$dir> until the skills it needs are
-loaded after the last commit in the session.  Those are
+loaded after the commit at its C<HEAD>.  Those are
 C<perl-slop:information-security> for any commit, because every commit has a
 message, the three finishing skills when any changed file is Perl, and the
 skills that F<.perl-slop.json> names under C<before_commit> for each changed
 path.
+
+The last commit is the one at C<HEAD>, by its commit time, and not a
+C<git commit> in the transcript.  A command that runs C<git commit> and then
+something else exits with the status of the last command, so its result in
+the transcript does not say whether the commit happened.  Only a commit that
+happened moves C<HEAD>.
 
 =cut
 
@@ -200,12 +216,12 @@ sub commit_gate {
     }
     $needed{$_} = 1 for map { configured( $root, 'before_commit', $_ ) } @changed;
 
-    my $session = session( $input->{transcript_path}, $input->{tool_use_id} );
-    my $since   = $session->{last_commit} // 0;
-    my @missing = grep { ( is_loaded( $session->{loaded}, $_ ) // -1 ) <= $since } sort keys %needed;
+    my $loaded  = session( $input->{transcript_path}, $input->{session_id} )->{loaded};
+    my $since   = head_time($root) // -1;
+    my @missing = grep { ( is_loaded( $loaded, $_ ) // -2 ) <= $since } sort keys %needed;
     return if !@missing;
 
-    return deny( "Before this commit, load @{[ list(@missing) ]} with the Skill tool and apply each to the " . 'changes, then commit again.  Each must be loaded after the last commit in this session, ' . 'and after the last compaction.' );
+    return deny( "Before this commit, load @{[ list(@missing) ]} with the Skill tool and apply each to the " . 'changes, then commit again.  Each must be loaded after the last commit in this repository, ' . 'and after the last compaction.' );
 }
 
 =head2 $output = publish_gate(\%input)
@@ -218,8 +234,8 @@ until C<perl-slop:information-security> is loaded.
 sub publish_gate {
     my ($input) = @_;
 
-    my $loaded  = session( $input->{transcript_path}, $input->{tool_use_id} )->{loaded};
-    my @missing = grep { !is_loaded( $loaded, $_ ) } @{ $BASE{prose} };
+    my $loaded  = session( $input->{transcript_path}, $input->{session_id} )->{loaded};
+    my @missing = grep { !defined is_loaded( $loaded, $_ ) } @{ $BASE{prose} };
     return if !@missing;
 
     return deny( "Load @{[ list(@missing) ]} with the Skill tool before a post to an issue, a pull request, " . 'a review, a release or a gist, then post again.  A skill counts once it is loaded after the last compaction.' );
@@ -237,12 +253,12 @@ that skill is not loaded.
 sub prompt_reminder {
     my ($input) = @_;
 
-    my $loaded = session( $input->{transcript_path} )->{loaded};
+    my $loaded = session( $input->{transcript_path}, $input->{session_id} )->{loaded};
     my @context;
-    if ( my @missing = grep { !is_loaded( $loaded, $_ ) } @{ $BASE{prose} } ) {
+    if ( my @missing = grep { !defined is_loaded( $loaded, $_ ) } @{ $BASE{prose} } ) {
         push @context, "Load @{[ list(@missing) ]} before you reply, and before you write any code, comment, " . 'commit message, issue or pull request.';
     }
-    if ( is_about_speed( $input->{prompt}, $input->{cwd} ) && !is_loaded( $loaded, 'perl-slop:profiling-perl' ) ) {
+    if ( is_about_speed( $input->{prompt}, $input->{cwd} ) && !defined is_loaded( $loaded, 'perl-slop:profiling-perl' ) ) {
         push @context, 'This is about speed.  Load perl-slop:profiling-perl before concluding ' . 'anything, and measure before and after a change.';
     }
     return if !@context;
@@ -300,7 +316,7 @@ sub list {
 
 =head2 $line = is_loaded(\%loaded, $name)
 
-The line of the transcript where C<$name> was last loaded, or undef.  A name
+The time, in epoch seconds, when C<$name> was last loaded, or undef.  A name
 with a plugin prefix is also satisfied by the bare name, which is how the text
 of a skill names its own directory.
 
@@ -315,110 +331,131 @@ sub is_loaded {
     return $last;
 }
 
-=head2 \%state = session($transcript_path, $current)
+=head2 \%state = session($transcript_path, $session_id)
 
-What the transcript says since its last compaction: C<loaded>, each skill by
-the line where it was last loaded, and C<last_commit>, the line of the last
-commit that succeeded.  C<$current> is the C<tool_use_id> of the call being
-decided.  That call is already in the transcript, and it is not a commit that
-happened.
+What is known since the last compaction: C<loaded>, each skill by the time
+when it was last loaded, in epoch seconds.  It reads the transcript, and adds
+the loads that C<record_load> wrote for C<$session_id>.
+
+The transcript alone is not enough.  Claude Code writes it some time after the
+fact, so the Skill calls since the last Bash call are often not in it when the
+next hook runs.  A load that only the transcript can show is then missed, and
+the gate refuses a commit whose skills were loaded a moment before.
 
 =cut
 
 sub session {
-    my ( $path, $current ) = @_;
+    my ( $path, $session_id ) = @_;
 
-    my %state = ( loaded => {}, last_commit => undef, commit_at => {}, current => $current );
-    return \%state if !defined $path;
-    open( my $fh, '<', $path ) or return \%state;
-    seek_past_compaction($fh)  or return \%state;
-
-    my $json = $JSON_CLASS->new;
-    while ( my $line = <$fh> ) {
-        next if !worth_decoding( $line, \%state );
-        my $entry   = eval { $json->decode($line) } or next;
-        my $content = ref $entry->{message} eq 'HASH' ? $entry->{message}{content} : undef;
-
-        if ( defined $content && !ref $content ) {
-            note_skill_text( \%state, $content, $. );
-        }
-        elsif ( ref $content eq 'ARRAY' ) {
-            note_block( \%state, $_, $. ) for grep { ref eq 'HASH' } @$content;
-        }
-    }
-    close($fh);
-    delete @state{qw{commit_at current}};
+    my %state = ( loaded => {} );
+    my $since = transcript_loads( \%state, $path );
+    recorded_loads( \%state, $session_id, $since );
     return \%state;
 }
 
-=head2 $ok = seek_past_compaction($fh)
+=head2 $since = transcript_loads(\%state, $transcript_path)
 
-Moves C<$fh> to the line after the last compaction, or leaves it at the start
-when there is none.  C<$.> goes on counting from the top of the file.  Nothing
-before a compaction counts, so it is not decoded.
+Adds to C<$state{loaded}> each load that the transcript shows after its last
+compaction.  Returns the time of that compaction, or 0 when there is none.
+
+=cut
+
+sub transcript_loads {
+    my ( $state, $path ) = @_;
+
+    return 0 if !defined $path;
+    open( my $fh, '<', $path ) or return 0;
+    my $since = seek_past_compaction($fh);
+
+    my $json = $JSON_CLASS->new;
+    while ( my $line = <$fh> ) {
+        next if !worth_decoding($line);
+        my $entry   = eval { $json->decode($line) } or next;
+        my $content = ref $entry->{message} eq 'HASH' ? $entry->{message}{content} : undef;
+        my $at      = entry_time($entry);
+
+        if ( defined $content && !ref $content ) {
+            note_skill_text( $state, $content, $at );
+        }
+        elsif ( ref $content eq 'ARRAY' ) {
+            note_block( $state, $_, $at ) for grep { ref eq 'HASH' } @$content;
+        }
+    }
+    close($fh);
+    return $since;
+}
+
+=head2 $since = seek_past_compaction($fh)
+
+Moves C<$fh> to the line after the last compaction, and returns the time of
+that compaction.  With no compaction, it leaves C<$fh> at the start and
+returns 0.  Nothing before a compaction counts, so it is not decoded.
 
 =cut
 
 sub seek_past_compaction {
     my ($fh) = @_;
-    my ( $start, $start_line ) = ( 0, 0 );
+    my ( $start, $boundary ) = ( 0, undef );
     while ( my $line = <$fh> ) {
-        ( $start, $start_line ) = ( tell($fh), $. ) if index( $line, '"compact_boundary"' ) >= 0;
+        ( $start, $boundary ) = ( tell($fh), $line ) if index( $line, '"compact_boundary"' ) >= 0;
     }
-    seek( $fh, $start, 0 ) or return;
-    $. = $start_line;    ## no critic (RequireLocalizedPunctuationVars) -- the line count of our own handle
-    return 1;
+    seek( $fh, $start, 0 ) or return 0;
+    return 0 if !defined $boundary;
+    return entry_time( eval { $JSON_CLASS->new->decode($boundary) } // {} );
 }
 
-=head2 $bool = worth_decoding($line, \%state)
+=head2 $seconds = entry_time(\%entry)
 
-Whether C<$line> can hold something that C<session> records, by the strings
-in it.  Decoding every line of a long transcript is what makes a scan slow.
+The C<timestamp> of a transcript entry in epoch seconds, or 0 when it has none
+that this can read.
+
+=cut
+
+sub entry_time {
+    my ($entry) = @_;
+    my ( $y, $mo, $d, $h, $mi, $s, $frac ) = ( $entry->{timestamp} // q{} ) =~ m/\A(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)([.]\d+)?Z\z/
+      or return 0;
+    return Time::Local::timegm( $s, $mi, $h, $d, $mo - 1, $y ) + ( $frac // 0 );
+}
+
+=head2 $bool = worth_decoding($line)
+
+Whether C<$line> can hold a load, by the strings in it.  Decoding every line
+of a long transcript is what makes a scan slow.
 
 =cut
 
 sub worth_decoding {
-    my ( $line, $state ) = @_;
+    my ($line) = @_;
     return 1 if index( $line, '"name":"Skill"' ) >= 0;
-    return 1 if index( $line, '"name":"Bash"' ) >= 0                  && index( $line, 'commit' ) >= 0;
     return 1 if index( $line, 'Base directory for this skill:' ) >= 0 && index( $line, 'invoked EARLIER' ) < 0;
-    return 1 if index( $line, '"tool_result"' ) >= 0 && grep { index( $line, $_ ) >= 0 } keys %{ $state->{commit_at} };
     return 0;
 }
 
-=head2 note_block(\%state, \%block, $line)
+=head2 note_block(\%state, \%block, $at)
 
-Records what one block of a message says: a Skill call, a commit, the result
-of a commit, or the text of a skill that a user loaded.
+Records a load that one block of a message shows, at the time C<$at>: a Skill
+call, or the text of a skill that a user loaded.
 
 =cut
 
 sub note_block {
-    my ( $state, $block, $line ) = @_;
+    my ( $state, $block, $at ) = @_;
 
     my $type  = $block->{type} // q{};
     my $name  = $block->{name} // q{};
     my $input = ref $block->{input} eq 'HASH' ? $block->{input} : {};
 
     if ( $type eq 'tool_use' && $name eq 'Skill' && defined $input->{skill} ) {
-        $state->{loaded}{ $input->{skill} } = $line;
-    }
-    elsif ( $type eq 'tool_use' && $name eq 'Bash' && defined $block->{id} ) {
-        my $current = $state->{current};
-        my $this    = defined $current && $block->{id} eq $current;
-        $state->{commit_at}{ $block->{id} } = $line if !$this && is_commit( $input->{command} // q{} );
-    }
-    elsif ( $type eq 'tool_result' && defined $block->{tool_use_id} && exists $state->{commit_at}{ $block->{tool_use_id} } ) {
-        my $at = delete $state->{commit_at}{ $block->{tool_use_id} };
-        $state->{last_commit} = $at if !$block->{is_error};
+        note_load( $state, $input->{skill}, $at );
     }
     elsif ( $type eq 'text' ) {
-        note_skill_text( $state, $block->{text}, $line );
+        note_skill_text( $state, $block->{text}, $at );
     }
     return;
 }
 
-=head2 note_skill_text(\%state, $text, $line)
+=head2 note_skill_text(\%state, $text, $at)
 
 Records each skill whose text C<$text> carries.  The reminder that follows a
 compaction also carries skill texts, cut short, and does not count.
@@ -426,10 +463,119 @@ compaction also carries skill texts, cut short, and does not count.
 =cut
 
 sub note_skill_text {
-    my ( $state, $text, $line ) = @_;
+    my ( $state, $text, $at ) = @_;
     return if !defined $text || index( $text, 'invoked EARLIER' ) >= 0;
-    $state->{loaded}{$1} = $line while $text =~ m/$SKILL_DIR_RX/g;
+    note_load( $state, $1, $at ) while $text =~ m/$SKILL_DIR_RX/g;
     return;
+}
+
+=head2 note_load(\%state, $name, $at)
+
+Records that C<$name> was loaded at C<$at>, unless a later load of it is
+already recorded.
+
+=cut
+
+sub note_load {
+    my ( $state, $name, $at ) = @_;
+    my $known = $state->{loaded}{$name};
+    $state->{loaded}{$name} = $at if !defined $known || $at > $known;
+    return;
+}
+
+=head2 record_load(\%input)
+
+For PostToolUse on the Skill tool.  Appends the skill and the time to the file
+of loads for the session, which C<recorded_loads> reads.  Returns undef, so
+the hook prints nothing.
+
+The hook runs just after the load, so the record is there for the next call.
+The transcript can take longer.  See C<session>.
+
+=cut
+
+sub record_load {
+    my ($input) = @_;
+
+    my $skill = ref $input->{tool_input} eq 'HASH' ? $input->{tool_input}{skill} : undef;
+    my $file  = loads_file( $input->{session_id} );
+    return if !defined $skill || !defined $file;
+
+    File::Path::make_path( File::Basename::dirname($file) );
+    open( my $fh, '>>', $file ) or return;
+    print {$fh} JSON::PP->new->canonical->encode( { skill => $skill, at => Time::HiRes::time() } ), "\n";
+    close($fh);
+    return;
+}
+
+=head2 forget_loads(\%input)
+
+For SessionStart.  After a compaction, removes the file of loads for the
+session, because a compaction takes the skills out of the context.  Returns
+undef.
+
+=cut
+
+sub forget_loads {
+    my ($input) = @_;
+    return if ( $input->{source} // q{} ) ne 'compact';
+    my $file = loads_file( $input->{session_id} ) // return;
+    unlink $file;
+    return;
+}
+
+=head2 recorded_loads(\%state, $session_id, $since)
+
+Adds to C<$state{loaded}> each load that C<record_load> wrote for
+C<$session_id> after the time C<$since>.  The time is a second guard after
+C<forget_loads>, for a compaction that happened while the hook was not
+installed.
+
+=cut
+
+sub recorded_loads {
+    my ( $state, $session_id, $since ) = @_;
+
+    my $file = loads_file($session_id) // return;
+    open( my $fh, '<', $file ) or return;
+    while ( my $line = <$fh> ) {
+        my $load = eval { JSON::PP->new->decode($line) } or next;
+        next if ref $load ne 'HASH' || !defined $load->{skill} || ( $load->{at} // 0 ) <= $since;
+        note_load( $state, $load->{skill}, $load->{at} );
+    }
+    close($fh);
+    return;
+}
+
+=head2 $file = loads_file($session_id)
+
+The file of loads for C<$session_id>, in C<CLAUDE_PLUGIN_DATA>, or in a
+F<perl-slop> directory in the temporary directory when that is not set.
+Undef for a session ID that is not letters, digits, C<_> and C<->, because it
+becomes part of a path.
+
+=cut
+
+sub loads_file {
+    my ($session_id) = @_;
+    return if !defined $session_id || $session_id !~ m/\A[\w-]+\z/;
+    my $dir = $ENV{CLAUDE_PLUGIN_DATA} || File::Spec->catdir( File::Spec->tmpdir, 'perl-slop' );
+    return File::Spec->catfile( $dir, "loads-$session_id.jsonl" );
+}
+
+=head2 $seconds = head_time($root)
+
+The commit time of C<HEAD> in the checkout at C<$root>, in epoch seconds, or
+undef when it has no commit or there is no C<git> on the C<PATH>.
+
+=cut
+
+sub head_time {
+    my ($root) = @_;
+    open( my $git, '-|', 'git', '-C', $root, 'log', '-1', '--format=%ct', 'HEAD' ) or return;
+    my $time = <$git>;
+    close($git);
+    return defined $time && $time =~ m/\A(\d+)/ ? $1 : undef;
 }
 
 =head2 $bool = is_commit($command)
