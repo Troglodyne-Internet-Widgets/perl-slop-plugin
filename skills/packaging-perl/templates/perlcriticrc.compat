@@ -57,6 +57,7 @@ strict = 1
 [Subroutines::ProhibitAmbiguousFunctionCalls]
 [ValuesAndExpressions::ProhibitSingleArgArraySlice]
 [ValuesAndExpressions::ProhibitDefinedBeforeLength]
+[Variables::ProhibitUselessVarClearing]
 [Bangs::ProhibitUselessRegexModifiers]
 [Bangs::ProhibitCommentedOutCode]
 [Tics::ProhibitUseBase]
