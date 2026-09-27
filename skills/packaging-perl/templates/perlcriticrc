@@ -50,6 +50,7 @@ strict = 1
 [ValuesAndExpressions::ProhibitSingleArgArraySlice]
 [ValuesAndExpressions::ProhibitDefinedBeforeLength]
 [Variables::ProhibitUselessVarClearing]
+[Subroutines::ProhibitTailRecursion]
 [Bangs::ProhibitUselessRegexModifiers]
 [Bangs::ProhibitCommentedOutCode]
 [Tics::ProhibitUseBase]
