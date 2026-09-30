@@ -164,10 +164,18 @@ fi
 # breaks a test as surely as a change to a module does.  The whole of t/, since
 # nothing here knows which tests a change can reach, and a distribution's suite
 # is small enough to run on each commit.  -l for lib/, as `dzil test` finds it.
+#
+# Without the GIT_ variables that git sets for this hook.  It sets
+# GIT_INDEX_FILE, and GIT_DIR too in a worktree, and git obeys them over -C.  So
+# a test that runs git in a repository of its own would add, commit and write
+# config in this one.  In a subshell, because the git commands above need them.
 if [ -d t ]
 then
     echo "Running the tests..."
-    prove -lm -j8 t/ || {
+    (
+        unset $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p')
+        prove -lm -j8 t/
+    ) || {
         echo "pre-commit: the tests above failed.  To see why, run each failing file"
         echo "on its own:  prove -lv t/<file>.t"
         echo "To commit without these checks at all: git commit --no-verify"
