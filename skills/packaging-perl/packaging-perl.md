@@ -89,14 +89,15 @@ cp $SKILL/templates/pod_stopwords         .pod_stopwords
 cp $SKILL/templates/gitignore             .gitignore
 cp $SKILL/templates/mailmap               .mailmap
 cp $SKILL/templates/pre-commit            git-hooks/pre-commit
+cp $SKILL/templates/post-commit           git-hooks/post-commit
 cp $SKILL/templates/CLAUDE.md             CLAUDE.md
 
-chmod +x git-hooks/pre-commit
-cp git-hooks/pre-commit .git/hooks/
+chmod +x git-hooks/pre-commit git-hooks/post-commit
+cp git-hooks/pre-commit git-hooks/post-commit .git/hooks/
 ```
 
-Install the hook in every clone, including this first one -- git will not do it
-for you, and a hook nobody installed is a tree that drifts.
+Install both hooks in every clone, including this first one -- git will not do
+it for you, and a hook nobody installed is a tree that drifts.
 
 Then substitute. The placeholders are the same in every file:
 
@@ -200,18 +201,33 @@ A machine with no perlcritic skips the pass and says so, the way it already does
 for perltidy; `dzil test` runs the same profile over `lib/`, so nothing reaches
 CPAN unjudged.
 
-The tests run last, as `prove -lm -j8 t/`, so they read the files that the tidy
+The tests run last, with `prove -lm -j8`, so they read the files that the tidy
 pass wrote. They run for every commit, not only a commit of Perl. A change to
-`dist.ini`, a `share/` file or a fixture can break a test as a module can. The
-hook runs all of `t/`, because it cannot know which tests a change reaches. If a
+`dist.ini`, a `share/` file or a fixture can break a test as a module can. If a
 test fails, the hook stops the commit and prints the command that shows why:
 `prove -lv t/<file>.t`.
 
-The tests run without the `GIT_` variables that git sets for a hook. git sets
-`GIT_INDEX_FILE` for a pre-commit hook, and `GIT_DIR` as well in a worktree,
-and git obeys them over `-C`. So a test that runs git in a repository of its
-own would otherwise add, commit and write config in the repository being
-committed to.
+Which tests run is the choice of `tests-covering`, from Perl::Tests::Covering.
+It reads the staged diff, and names the tests that ran a line the diff
+changes. A file that its records cannot place, such as `dist.ini` or a new
+module, chooses every test. A machine without `tests-covering` runs all of
+`t/`, and the hook says so.
+
+**`git-hooks/post-commit`** keeps the records of `tests-covering` up to date.
+After each commit, it runs the tests that the commit made stale under
+Devel::Cover, in the background. Without it, the records describe older files,
+and the choice of the pre-commit hook grows coarser with each commit. It does
+nothing while a rebase, or a cherry-pick or revert of several commits, applies
+commits. git runs the hook for each commit that it applies, and each run would
+start a refresh of its own. The first ordinary commit afterwards catches the
+records up. The records are kept under `~/.cache`, so the distribution gains no
+files.
+
+Both hooks run the tests without the `GIT_` variables that git sets for a hook.
+git sets `GIT_INDEX_FILE` for a hook, and `GIT_DIR` as well in a worktree, and
+git obeys them over `-C`. So a test that runs git in a repository of its own
+would otherwise add, commit and write config in the repository being committed
+to.
 
 It is there because a `.perltidyrc` on its own does not keep a tree tidy.
 Tidying a file you are changing three lines of buries the change in a hundred
