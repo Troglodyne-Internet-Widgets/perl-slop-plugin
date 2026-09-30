@@ -88,6 +88,8 @@ formats = #!/usr/bin/env perl
 [RegularExpressions::ProhibitRegexToChomp]
 [BuiltinFunctions::ProhibitChainingSameListSub]
 [RegularExpressions::ProhibitRegexForStringEquality]
+[Subroutines::ProhibitUnderscorePrivateSubs]
+[Subroutines::ProhibitSingleUseLexicalSubs]
 [ProhibitUseLib]
 [ProhibitUsageSubs]
 [RequireQwForLiteralLists]
