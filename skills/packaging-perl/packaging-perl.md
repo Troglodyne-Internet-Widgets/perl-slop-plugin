@@ -207,6 +207,12 @@ hook runs all of `t/`, because it cannot know which tests a change reaches. If a
 test fails, the hook stops the commit and prints the command that shows why:
 `prove -lv t/<file>.t`.
 
+The tests run without the `GIT_` variables that git sets for a hook. git sets
+`GIT_INDEX_FILE` for a pre-commit hook, and `GIT_DIR` as well in a worktree,
+and git obeys them over `-C`. So a test that runs git in a repository of its
+own would otherwise add, commit and write config in the repository being
+committed to.
+
 It is there because a `.perltidyrc` on its own does not keep a tree tidy.
 Tidying a file you are changing three lines of buries the change in a hundred
 lines of reformatting, so the reasonable thing is to skip it -- and then the next
