@@ -78,6 +78,13 @@ is one character of a name.
 A `before_commit` entry applies to any changed file that matches it, Perl or
 not.
 
+These skills are usually project skills in the `.claude/skills` directory of
+the same repository. Claude Code registers project skills only for a session
+that starts in that repository, or that adds it with `/add-dir`. So in any
+other session, the Skill tool does not know them. When a refusal names a skill
+that the repository keeps there, it also tells the model to ask you to run
+`/add-dir` for that repository. Only you can run that command.
+
 The hooks learn which skills are loaded from two sources.  After each Skill
 call, a PostToolUse hook records the skill and the time in a file for the
 session, in `CLAUDE_PLUGIN_DATA`.  The hooks also read the session

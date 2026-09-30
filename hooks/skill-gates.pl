@@ -11,6 +11,7 @@ use File::Basename ();
 use File::Path     ();
 use File::Spec     ();
 use JSON::PP       ();    ## no critic (PreferredModules) -- core, so the hook runs on any perl; see $JSON_CLASS
+use List::Util     ();
 use Time::HiRes    ();
 use Time::Local    ();
 
@@ -32,6 +33,11 @@ L</record_load(\%input)>.
 A skill counts as loaded when the transcript shows a Skill call for it, or
 the text of the skill that a user's C</name> loads, or when this hook recorded
 the load.  Each counts only after the last compaction.
+
+Claude Code registers the skills of a project only for a session that starts
+in it, or that adds it with C</add-dir>.  So when a gate asks for a skill that
+another repository keeps, its refusal tells the model to ask the user for that
+C</add-dir>.
 
 It uses core modules only, because it runs on whatever perl the machine has.
 It exits 0 whatever happens, so a fault in it allows the action rather than
@@ -143,7 +149,7 @@ sub decide {
     my $tool = $input->{tool_name}  // q{};
     my $args = $input->{tool_input} // {};
 
-    if ( $tool =~ m/\A(?:Edit|Write|MultiEdit|NotebookEdit)\z/ ) {
+    if ( List::Util::any { $tool eq $_ } qw{Edit Write MultiEdit NotebookEdit} ) {
         my $file = $args->{file_path} // $args->{notebook_path} // return;
         return edit_gate( $input, [ [ $file, $args->{content} ] ] );
     }
@@ -181,11 +187,12 @@ for a Write, the content that it writes.
 sub edit_gate {
     my ( $input, $files ) = @_;
 
-    my ( %needed, @perl );
+    my ( %needed, @perl, %roots );
     $needed{$_} = 1 for @{ $BASE{prose} };
     foreach my $pair (@$files) {
         my ( $file, $content ) = @$pair;
         my $root = checkout_root($file);
+        $roots{$root} = 1 if defined $root;
         if ( is_perl( $file, $content ) ) {
             $needed{$_} = 1 for @{ $BASE{edit} };
             push @perl, $file;
@@ -198,7 +205,7 @@ sub edit_gate {
     return if !@missing;
 
     my @named = @perl ? @perl : map { $_->[0] } @$files;
-    return deny( "Load @{[ list(@missing) ]} with the Skill tool before an edit to " . join( ', ', @named ) . ', then make the edit again.  A skill counts once it is loaded after the last compaction.' );
+    return deny( "Load @{[ list(@missing) ]} with the Skill tool before an edit to " . join( ', ', @named ) . ', then make the edit again.  A skill counts once it is loaded after the last compaction.' . add_dir_advice( [ sort keys %roots ], @missing ) );
 }
 
 =head2 $output = commit_gate(\%input, $dir)
@@ -235,7 +242,28 @@ sub commit_gate {
     my @missing = grep { ( is_loaded( $loaded, $_ ) // -2 ) <= $since } sort keys %needed;
     return if !@missing;
 
-    return deny( "Before this commit, load @{[ list(@missing) ]} with the Skill tool and apply each to the " . 'changes, then commit again.  Each must be loaded after the last commit in this repository, ' . 'and after the last compaction.' );
+    return deny( "Before this commit, load @{[ list(@missing) ]} with the Skill tool and apply each to the " . 'changes, then commit again.  Each must be loaded after the last commit in this repository, ' . 'and after the last compaction.' . add_dir_advice( [$root], @missing ) );
+}
+
+=head2 $text = add_dir_advice(\@roots, @missing)
+
+A sentence for each repository at one of C<@roots> that keeps any of
+C<@missing> in its F<.claude/skills>: if the Skill tool does not know them, ask
+the user to run C</add-dir> for that repository, which only the user can run.
+An empty string when there is none.
+
+=cut
+
+sub add_dir_advice {
+    my ( $roots, @missing ) = @_;
+
+    my @said;
+    foreach my $root (@$roots) {
+        my @kept = grep { -f File::Spec->catfile( $root, '.claude', 'skills', $_, 'SKILL.md' ) } @missing;
+        next if !@kept;
+        push @said, "  If the Skill tool does not know @{[ list(@kept) ]}, ask the user to run /add-dir $root, which loads the skills of that repository, then load them.";
+    }
+    return join( q{}, @said );
 }
 
 =head2 $output = publish_gate(\%input)
