@@ -298,40 +298,33 @@ subtest 'a repository can ask for more skills in .perl-slop.json' => sub {
 };
 
 # A session that starts in another repository has no Skill tool entry for the
-# skills of this one, so a Read of the file is the only way to load them.
-subtest 'a Read of all of a SKILL.md under .claude/skills counts as its load' => sub {
+# skills of this one, and only the user can add the repository with /add-dir.
+subtest 'a refusal for a skill that the repository keeps asks the user for /add-dir' => sub {
     my $config = $JSON->encode(
         {
             before_edit   => { 'lib/Recipe/**' => ['writing-recipes'] },
-            before_commit => { 'templates/**'  => ['provisioning-recipes'] },
+            before_commit => { 'templates/**'  => [ 'provisioning-recipes', 'not-kept-here' ] },
         }
     );
     my $root = repo(
-        '.perl-slop.json'                            => $config,
-        'lib/Recipe/Foo.pm'                          => "package Foo;\n1;\n",
+        '.perl-slop.json'                              => $config,
+        'lib/Recipe/Foo.pm'                            => "package Foo;\n1;\n",
         '.claude/skills/writing-recipes/SKILL.md'      => "writing\n",
         '.claude/skills/provisioning-recipes/SKILL.md' => "provisioning\n",
     );
     git( $root, 'add', '-A' );
     git( $root, 'commit', '-q', '-m', 'config' );
 
-    my $file = "$root/.claude/skills/writing-recipes/SKILL.md";
-    my $read = sub { my (%args) = @_; return tool_use( 'rd', 'Read', { file_path => $file, %args } ) };
+    my $why = edit( "$root/lib/Recipe/Foo.pm", transcript( reading() ) );
+    like( $why, qr{does[ ]not[ ]know[ ]writing-recipes,[ ]ask[ ]the[ ]user[ ]to[ ]run[ ]/add-dir[ ]\Q$root\E}, 'an edit names the command for the repository' );
 
-    like( edit( "$root/lib/Recipe/Foo.pm", transcript( reading() ) ), qr/read all of \Q$file\E with the Read tool/, 'the refusal names the file to read' );
-    is( edit( "$root/lib/Recipe/Foo.pm", transcript( reading(), $read->() ) ), undef, 'and reading it is enough' );
-    like( edit( "$root/lib/Recipe/Foo.pm", transcript( reading(), $read->( limit => 5 ) ) ), qr/writing-recipes/, 'part of the file is not' );
-
-    my $elsewhere = tool_use( 'rd', 'Read', { file_path => "$root/docs/writing-recipes/SKILL.md" } );
-    like( edit( "$root/lib/Recipe/Foo.pm", transcript( reading(), $elsewhere ) ), qr/writing-recipes/, 'nor is a SKILL.md outside .claude/skills' );
-
-    PerlSlop::SkillGates::decide( { hook_event_name => 'PostToolUse', tool_name => 'Read', tool_input => { file_path => $file }, session_id => 'sess-read' } );
-    is( edit( "$root/lib/Recipe/Foo.pm", transcript( reading() ), session_id => 'sess-read' ), undef, 'the Read is recorded, for a transcript that does not show it yet' );
+    my $read = tool_use( 'rd', 'Read', { file_path => "$root/.claude/skills/writing-recipes/SKILL.md" } );
+    like( edit( "$root/lib/Recipe/Foo.pm", transcript( reading(), $read ) ), qr/writing-recipes/, 'and a Read of the file is not a load' );
 
     write_file( $root, 'templates/x.tt', "[% x %]\n" );
-    my $provisioning = tool_use( 'rp', 'Read', { file_path => "$root/.claude/skills/provisioning-recipes/SKILL.md" } );
-    like( run_bash( "cd $root && git commit -am x", transcript( skill( 's3', $PROSE ) ) ), qr/provisioning-recipes\/SKILL[.]md with the Read tool/, 'a commit names the file too' );
-    is( run_bash( "cd $root && git commit -am x", transcript( $provisioning, skill( 's3', $PROSE ) ) ), undef, 'and passes once it is read' );
+    my $commit = run_bash( "cd $root && git commit -am x", transcript( skill( 's3', $PROSE ) ) );
+    like( $commit, qr{does[ ]not[ ]know[ ]provisioning-recipes,[ ]ask}, 'a commit names it too' );
+    unlike( $commit, qr/know[^.]*not-kept-here/, 'but not for a skill that the repository does not keep' );
 };
 
 subtest 'a prompt gets reminders of information-security, and of profiling-perl when it is about speed' => sub {

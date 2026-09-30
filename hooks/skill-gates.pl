@@ -31,14 +31,13 @@ SessionStart after a compaction, to forget the loads before it.  See
 L</record_load(\%input)>.
 
 A skill counts as loaded when the transcript shows a Skill call for it, or
-the text of the skill that a user's C</name> loads, or a Read of all of its
-F<SKILL.md> under a F<.claude/skills> directory, or when this hook recorded the
-load.  Each counts only after the last compaction.
+the text of the skill that a user's C</name> loads, or when this hook recorded
+the load.  Each counts only after the last compaction.
 
-The Read is for a skill of a repository other than the one the session started
-in.  Claude Code registers the skills of a project only for a session that
-starts there, so the Skill tool does not know them anywhere else, and a gate
-that asks for one could never pass.
+Claude Code registers the skills of a project only for a session that starts
+in it, or that adds it with C</add-dir>.  So when a gate asks for a skill that
+another repository keeps, its refusal tells the model to ask the user for that
+C</add-dir>.
 
 It uses core modules only, because it runs on whatever perl the machine has.
 It exits 0 whatever happens, so a fault in it allows the action rather than
@@ -110,10 +109,6 @@ our $SLOW_RX = qr/\b(?:slow(?:er|ly|ness)?|profil\w*|time[ds]?[ -]?out|timing ou
 
 our $SKILL_DIR_RX = qr{Base directory for this skill: \S*/([^/\s]+)\s};
 
-# The file of a skill that a user or a project installed, whose directory names
-# it.  A plugin's skills are under .claude/plugins, and do not match.
-our $SKILL_FILE_RX = qr{/[.]claude/skills/([^/]+)/SKILL[.]md\z};
-
 exit main() unless caller;
 
 =head1 SUBROUTINES
@@ -147,7 +142,7 @@ sub decide {
 
     my $event = $input->{hook_event_name} // q{};
     return prompt_reminder($input) if $event eq 'UserPromptSubmit';
-    return record_load($input)     if $event eq 'PostToolUse' && List::Util::any { ( $input->{tool_name} // q{} ) eq $_ } qw{Skill Read};
+    return record_load($input)     if $event eq 'PostToolUse' && ( $input->{tool_name} // q{} ) eq 'Skill';
     return forget_loads($input)    if $event eq 'SessionStart';
     return                         if $event ne 'PreToolUse';
 
@@ -210,7 +205,7 @@ sub edit_gate {
     return if !@missing;
 
     my @named = @perl ? @perl : map { $_->[0] } @$files;
-    return deny( "Load @{[ list(@missing) ]} with the Skill tool before an edit to " . join( ', ', @named ) . ', then make the edit again.  A skill counts once it is loaded after the last compaction.' . read_instead( [ sort keys %roots ], @missing ) );
+    return deny( "Load @{[ list(@missing) ]} with the Skill tool before an edit to " . join( ', ', @named ) . ', then make the edit again.  A skill counts once it is loaded after the last compaction.' . add_dir_advice( [ sort keys %roots ], @missing ) );
 }
 
 =head2 $output = commit_gate(\%input, $dir)
@@ -247,24 +242,26 @@ sub commit_gate {
     my @missing = grep { ( is_loaded( $loaded, $_ ) // -2 ) <= $since } sort keys %needed;
     return if !@missing;
 
-    return deny( "Before this commit, load @{[ list(@missing) ]} with the Skill tool and apply each to the " . 'changes, then commit again.  Each must be loaded after the last commit in this repository, ' . 'and after the last compaction.' . read_instead( [$root], @missing ) );
+    return deny( "Before this commit, load @{[ list(@missing) ]} with the Skill tool and apply each to the " . 'changes, then commit again.  Each must be loaded after the last commit in this repository, ' . 'and after the last compaction.' . add_dir_advice( [$root], @missing ) );
 }
 
-=head2 $text = read_instead(\@roots, @missing)
+=head2 $text = add_dir_advice(\@roots, @missing)
 
-A sentence for each of C<@missing> that a repository at one of C<@roots> keeps
-in its F<.claude/skills>: to read that F<SKILL.md> with the Read tool if the
-Skill tool does not know the skill.  An empty string when there is none.
+A sentence for each repository at one of C<@roots> that keeps any of
+C<@missing> in its F<.claude/skills>: if the Skill tool does not know them, ask
+the user to run C</add-dir> for that repository, which only the user can run.
+An empty string when there is none.
 
 =cut
 
-sub read_instead {
+sub add_dir_advice {
     my ( $roots, @missing ) = @_;
 
     my @said;
-    foreach my $name (@missing) {
-        my ($file) = grep { -f } map { File::Spec->catfile( $_, '.claude', 'skills', $name, 'SKILL.md' ) } @$roots;
-        push @said, "  If the Skill tool does not know $name, read all of $file with the Read tool instead." if defined $file;
+    foreach my $root (@$roots) {
+        my @kept = grep { -f File::Spec->catfile( $root, '.claude', 'skills', $_, 'SKILL.md' ) } @missing;
+        next if !@kept;
+        push @said, "  If the Skill tool does not know @{[ list(@kept) ]}, ask the user to run /add-dir $root, which loads the skills of that repository, then load them.";
     }
     return join( q{}, @said );
 }
@@ -497,7 +494,6 @@ of a long transcript is what makes a scan slow.
 sub worth_decoding {
     my ($line) = @_;
     return 1 if index( $line, '"name":"Skill"' ) >= 0;
-    return 1 if index( $line, '"name":"Read"' ) >= 0 && index( $line, 'SKILL.md' ) >= 0;
     return 1 if index( $line, 'Base directory for this skill:' ) >= 0 && index( $line, 'invoked EARLIER' ) < 0;
     return 0;
 }
@@ -505,8 +501,7 @@ sub worth_decoding {
 =head2 note_block(\%state, \%block, $at)
 
 Records a load that one block of a message shows, at the time C<$at>: a Skill
-call, a Read of the file of a skill, or the text of a skill that a user
-loaded.
+call, or the text of a skill that a user loaded.
 
 =cut
 
@@ -520,28 +515,10 @@ sub note_block {
     if ( $type eq 'tool_use' && $name eq 'Skill' && defined $input->{skill} ) {
         note_load( $state, $input->{skill}, $at );
     }
-    elsif ( $type eq 'tool_use' && $name eq 'Read' ) {
-        my $skill = read_skill($input);
-        note_load( $state, $skill, $at ) if defined $skill;
-    }
     elsif ( $type eq 'text' ) {
         note_skill_text( $state, $block->{text}, $at );
     }
     return;
-}
-
-=head2 $name = read_skill(\%tool_input)
-
-The skill whose F<SKILL.md> a Read with C<%tool_input> reads, or undef.  A Read
-with an C<offset> or a C<limit> gets part of the file, and does not count.
-
-=cut
-
-sub read_skill {
-    my ($args) = @_;
-    return if defined $args->{offset} || defined $args->{limit};
-    my ($name) = ( $args->{file_path} // q{} ) =~ $SKILL_FILE_RX;
-    return $name;
 }
 
 =head2 note_skill_text(\%state, $text, $at)
@@ -574,9 +551,8 @@ sub note_load {
 
 =head2 record_load(\%input)
 
-For PostToolUse on the Skill tool, and on the Read tool for the file of a skill.
-Appends the skill and the time to the file of loads for the session, which
-C<recorded_loads> reads.  Returns undef, so
+For PostToolUse on the Skill tool.  Appends the skill and the time to the file
+of loads for the session, which C<recorded_loads> reads.  Returns undef, so
 the hook prints nothing.
 
 The hook runs just after the load, so the record is there for the next call.
@@ -587,8 +563,7 @@ The transcript can take longer.  See C<session>.
 sub record_load {
     my ($input) = @_;
 
-    my $args  = ref $input->{tool_input} eq 'HASH' ? $input->{tool_input} : {};
-    my $skill = ( $input->{tool_name} // q{} ) eq 'Read' ? read_skill($args) : $args->{skill};
+    my $skill = ref $input->{tool_input} eq 'HASH' ? $input->{tool_input}{skill} : undef;
     my $file  = loads_file( $input->{session_id} );
     return if !defined $skill || !defined $file;
 

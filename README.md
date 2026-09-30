@@ -80,11 +80,10 @@ not.
 
 These skills are usually project skills in the `.claude/skills` directory of
 the same repository. Claude Code registers project skills only for a session
-that starts in that repository. So in any other session, the Skill tool does
-not know them. For that case, a Read of the whole `SKILL.md` under a
-`.claude/skills` directory also counts as a load of the skill. A Read with an
-offset or a limit does not count. When a refusal names a skill that the
-repository keeps there, it also gives the path of the file to read.
+that starts in that repository, or that adds it with `/add-dir`. So in any
+other session, the Skill tool does not know them. When a refusal names a skill
+that the repository keeps there, it also tells the model to ask you to run
+`/add-dir` for that repository. Only you can run that command.
 
 The hooks learn which skills are loaded from two sources.  After each Skill
 call, a PostToolUse hook records the skill and the time in a file for the
