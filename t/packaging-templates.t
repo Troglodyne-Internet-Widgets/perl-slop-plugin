@@ -19,8 +19,8 @@ the scaffold and dist.ini still agree with it.
 
 Core-only on purpose: this asserts on the text of the templates, so it runs
 wherever the plugin does rather than only where Perl::Critic and twenty policy
-distributions are installed.  The one exception runs the pre-commit hook, with
-git and sh, on a commit that gives perltidy and perlcritic nothing to judge.
+distributions are installed.  The exceptions run the pre-commit hook, with git
+and sh, on commits that give perltidy and perlcritic nothing to judge.
 
 =cut
 
@@ -178,6 +178,64 @@ subtest 'the hook runs the tests last, and a failing test stops the commit' => s
     ( $exit, $out ) = $run->( 'pass.t' => $pass, 'fail.t' => "use Test::More;\nok(0, 'broken');\ndone_testing;\n" );
     is( $exit, 1, 'a failing test stops it' ) or diag $out;
     like( $out, qr{prove[ ]-lv[ ]t/<file>[.]t}, 'and the hook says how to see why' );
+};
+
+subtest 'the tests the hook runs get none of the variables that point git at the repository' => sub {
+
+    # git sets GIT_INDEX_FILE for the hook, and GIT_DIR as well in a worktree,
+    # and obeys them over -C.  This test may itself be run by such a hook, so
+    # its own git must not see them either.
+    my @local = split /\n/, `git rev-parse --local-env-vars`;    ## no critic (ProhibitShellDispatch) -- git is what names them
+    ok( scalar @local, 'git names them' ) or return;
+    local @ENV{@local};
+    delete @ENV{@local};
+
+    my $git = sub {
+        my ( $dir, @args ) = @_;
+        return system( 'git', '-C', $dir, '-c', 'user.name=Tester', '-c', 'user.email=tester@test.test', @args );    ## no critic (ProhibitShellDispatch) -- git runs the hook, which is what is under test
+    };
+
+    # Fails on any of those variables, and commits in a repository of its own,
+    # which is what the variables would redirect.
+    my $probe = join( "\n",
+        'use strict; use warnings; use Test::More; use File::Temp qw{tempdir};',
+        'my @set = grep { exists $ENV{$_} } split /\n/, `git rev-parse --local-env-vars`;',
+        q{is( "@set", '', 'no variable points git at the repository being committed to' );},
+        'my $inner = tempdir( CLEANUP => 1 );',
+        q{system("git -C $inner init -q && echo x > $inner/x && git -C $inner add x && git -C $inner -c user.name=t -c user.email=t\@test.test commit -q -m inner");},
+        'done_testing;', q{} );
+
+    my $write = sub {
+        my ( $path, $text ) = @_;
+        open( my $fh, '>', $path ) or die "$path: $!";
+        print {$fh} $text;
+        close($fh) or die "$path: $!";
+        return;
+    };
+
+    my $root = tempdir( CLEANUP => 1 );
+    my $repo = "$root/repo";
+    mkdir $repo or die $!;
+    $git->( $repo, 'init', '-q' ) == 0 or die 'git init';
+    mkdir "$repo/t" or die $!;
+    $write->( "$repo/t/env.t", $probe );
+    $write->( "$repo/.git/hooks/pre-commit", slurp("$TEMPLATES/pre-commit") );
+    chmod 0755, "$repo/.git/hooks/pre-commit";
+
+    # A README, so that what decides the commit is the suite alone.
+    $write->( "$repo/README", "words\n" );
+    $git->( $repo, 'add', 'README' ) == 0 or die 'git add';
+    is( $git->( $repo, 'commit', '-q', '-m', 'in the checkout' ), 0, 'a commit in the checkout passes' );
+
+    $git->( $repo, 'worktree', 'add', '-q', "$root/wt", '-b', 'wt' ) == 0 or die 'git worktree add';
+    mkdir "$root/wt/t" or die $!;
+    $write->( "$root/wt/t/env.t", $probe );
+    $write->( "$root/wt/README",   "more words\n" );
+    $git->( "$root/wt", 'add', 'README' ) == 0 or die 'git add';
+    is( $git->( "$root/wt", 'commit', '-q', '-m', 'in a worktree' ), 0, 'and so does a commit in a worktree' );
+
+    my @inner = grep { index( $_, q{inner} ) >= 0 } `git -C $repo log --all --format=%s`;    ## no critic (ProhibitShellDispatch)
+    is( scalar @inner, 0, 'and what the test committed stayed in its own repository' );
 };
 
 subtest 'what the profiles read is scaffolded and shipped' => sub {
