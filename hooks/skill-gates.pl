@@ -11,6 +11,7 @@ use File::Basename ();
 use File::Path     ();
 use File::Spec     ();
 use JSON::PP       ();    ## no critic (PreferredModules) -- core, so the hook runs on any perl; see $JSON_CLASS
+use List::Util     ();
 use Time::HiRes    ();
 use Time::Local    ();
 
@@ -146,7 +147,7 @@ sub decide {
 
     my $event = $input->{hook_event_name} // q{};
     return prompt_reminder($input) if $event eq 'UserPromptSubmit';
-    return record_load($input)     if $event eq 'PostToolUse' && ( $input->{tool_name} // q{} ) =~ m/\A(?:Skill|Read)\z/;
+    return record_load($input)     if $event eq 'PostToolUse' && List::Util::any { ( $input->{tool_name} // q{} ) eq $_ } qw{Skill Read};
     return forget_loads($input)    if $event eq 'SessionStart';
     return                         if $event ne 'PreToolUse';
 
