@@ -87,6 +87,7 @@ formats = #!/usr/bin/env perl
 [RegularExpressions::ProhibitRegexToStripAffix]
 [RegularExpressions::ProhibitRegexToChomp]
 [BuiltinFunctions::ProhibitChainingSameListSub]
+[RegularExpressions::ProhibitRegexForStringEquality]
 [ProhibitUseLib]
 [ProhibitUsageSubs]
 [RequireQwForLiteralLists]
