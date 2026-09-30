@@ -297,6 +297,43 @@ subtest 'a repository can ask for more skills in .perl-slop.json' => sub {
     is( run_bash( "cd $root && git commit -am x", transcript( skill( 's2', 'provisioning-recipes' ), skill( 's3', $PROSE ) ) ), undef, 'and passes once it is loaded' );
 };
 
+# A session that starts in another repository has no Skill tool entry for the
+# skills of this one, so a Read of the file is the only way to load them.
+subtest 'a Read of all of a SKILL.md under .claude/skills counts as its load' => sub {
+    my $config = $JSON->encode(
+        {
+            before_edit   => { 'lib/Recipe/**' => ['writing-recipes'] },
+            before_commit => { 'templates/**'  => ['provisioning-recipes'] },
+        }
+    );
+    my $root = repo(
+        '.perl-slop.json'                            => $config,
+        'lib/Recipe/Foo.pm'                          => "package Foo;\n1;\n",
+        '.claude/skills/writing-recipes/SKILL.md'      => "writing\n",
+        '.claude/skills/provisioning-recipes/SKILL.md' => "provisioning\n",
+    );
+    git( $root, 'add', '-A' );
+    git( $root, 'commit', '-q', '-m', 'config' );
+
+    my $file = "$root/.claude/skills/writing-recipes/SKILL.md";
+    my $read = sub { my (%args) = @_; return tool_use( 'rd', 'Read', { file_path => $file, %args } ) };
+
+    like( edit( "$root/lib/Recipe/Foo.pm", transcript( reading() ) ), qr/read all of \Q$file\E with the Read tool/, 'the refusal names the file to read' );
+    is( edit( "$root/lib/Recipe/Foo.pm", transcript( reading(), $read->() ) ), undef, 'and reading it is enough' );
+    like( edit( "$root/lib/Recipe/Foo.pm", transcript( reading(), $read->( limit => 5 ) ) ), qr/writing-recipes/, 'part of the file is not' );
+
+    my $elsewhere = tool_use( 'rd', 'Read', { file_path => "$root/docs/writing-recipes/SKILL.md" } );
+    like( edit( "$root/lib/Recipe/Foo.pm", transcript( reading(), $elsewhere ) ), qr/writing-recipes/, 'nor is a SKILL.md outside .claude/skills' );
+
+    PerlSlop::SkillGates::decide( { hook_event_name => 'PostToolUse', tool_name => 'Read', tool_input => { file_path => $file }, session_id => 'sess-read' } );
+    is( edit( "$root/lib/Recipe/Foo.pm", transcript( reading() ), session_id => 'sess-read' ), undef, 'the Read is recorded, for a transcript that does not show it yet' );
+
+    write_file( $root, 'templates/x.tt', "[% x %]\n" );
+    my $provisioning = tool_use( 'rp', 'Read', { file_path => "$root/.claude/skills/provisioning-recipes/SKILL.md" } );
+    like( run_bash( "cd $root && git commit -am x", transcript( skill( 's3', $PROSE ) ) ), qr/provisioning-recipes\/SKILL[.]md with the Read tool/, 'a commit names the file too' );
+    is( run_bash( "cd $root && git commit -am x", transcript( $provisioning, skill( 's3', $PROSE ) ) ), undef, 'and passes once it is read' );
+};
+
 subtest 'a prompt gets reminders of information-security, and of profiling-perl when it is about speed' => sub {
     my $root = repo( 'dist.ini' => "name = X\n" );
     my $ask  = sub {
