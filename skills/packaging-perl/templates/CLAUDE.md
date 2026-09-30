@@ -56,7 +56,9 @@ Then run `podchecker` on each changed file.  Run `perl -Ilib -c` on each
 changed script that no test loads, because the tests do not compile it.
 
 The pre-commit hook does the rest.  It tidies the Perl that you staged, runs
-perlcritic on it, and runs the tests.  If a step fails, the hook stops the
+perlcritic on it, and runs the tests that the commit can break, which
+`tests-covering` chooses.  The post-commit hook keeps the records of
+`tests-covering` up to date, in the background.  If a step fails, the hook stops the
 commit and prints the reason.  Do not run `perltidy` or `perlcritic` yourself,
 and do not run the tests to decide whether a change is ready to commit.
 
@@ -69,11 +71,11 @@ prove -lv t/<file>.t
 
 Do the same to see a new test fail before you fix what it tests.
 
-In each clone that you commit from, install the hook once.  Git does not
-install it for you, and without the hook the tree drifts from its style:
+In each clone that you commit from, install both hooks once.  Git does not
+install them for you, and without the hooks the tree drifts from its style:
 
 ```
-cp git-hooks/pre-commit .git/hooks/
+cp git-hooks/pre-commit git-hooks/post-commit .git/hooks/
 ```
 
 ## When something is slow

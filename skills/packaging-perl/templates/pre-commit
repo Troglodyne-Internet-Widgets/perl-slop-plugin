@@ -161,24 +161,49 @@ fi
 
 # Last, because the tests read the files that the tidy pass wrote.  Whatever is
 # staged, and not only Perl: a change to dist.ini, a share/ file or a fixture
-# breaks a test as surely as a change to a module does.  The whole of t/, since
-# nothing here knows which tests a change can reach, and a distribution's suite
-# is small enough to run on each commit.  -l for lib/, as `dzil test` finds it.
+# breaks a test as surely as a change to a module does.  -l for lib/, as
+# `dzil test` finds it.
 #
 # Without the GIT_ variables that git sets for this hook.  It sets
 # GIT_INDEX_FILE, and GIT_DIR too in a worktree, and git obeys them over -C.  So
 # a test that runs git in a repository of its own would add, commit and write
-# config in this one.  In a subshell, because the git commands above need them.
-if [ -d t ]
-then
-    echo "Running the tests..."
+# config in this one.  In a subshell, because the git commands of this hook need
+# them: under git commit -a, GIT_INDEX_FILE names the index being committed.
+run_tests() {
     (
         unset $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p')
-        prove -lm -j8 t/
+        prove -lm -j8 "$@"
     ) || {
         echo "pre-commit: the tests above failed.  To see why, run each failing file"
         echo "on its own:  prove -lv t/<file>.t"
         echo "To commit without these checks at all: git commit --no-verify"
         exit 1
     }
+}
+
+test -d t || exit 0
+
+# Without tests-covering, every test, because nothing here knows which tests a
+# change can reach.
+if ! command -v tests-covering >/dev/null 2>&1
+then
+    echo "Running every test, because tests-covering is not on PATH; install Perl::Tests::Covering..."
+    run_tests t/
+    exit 0
 fi
+
+# tests-covering chooses the tests that ran a line the diff changes, from the
+# records that git-hooks/post-commit keeps up to date.  --unexplained all runs
+# every test for a file that the records cannot place, such as dist.ini or a
+# new module.  --full-index, because it matches each file to its records by
+# the blob id on the index line of the diff, and an abbreviated id matches
+# nothing.
+tests=$(git diff --cached --full-index | tests-covering --diff --unexplained all) || exit 1
+if [ -z "$tests" ]
+then
+    echo "No test ran a line that this commit changes."
+    exit 0
+fi
+
+echo "Running the tests that ran what this commit changes..."
+run_tests $tests

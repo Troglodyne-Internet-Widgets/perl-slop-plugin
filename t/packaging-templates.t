@@ -149,35 +149,152 @@ subtest 'the hook judges what it tidied, with the profile that was copied' => su
     unlike( $lib_pass, qr/--exclude/,                            'while a module is still asked for its POD' );
 };
 
+# A PATH that holds only the tools the hooks use, so that whether tests-covering
+# is there is the test's choice rather than the machine's.  With a fake
+# tests-covering when $covering is given: its body, as sh.
+sub hook_path {
+    my ($covering) = @_;
+    my $bin = tempdir( CLEANUP => 1 );
+    foreach my $tool (qw{git sh sed env prove perl head grep nproc tr}) {
+        my ($found) = grep { -x "$_/$tool" } split /:/, $ENV{PATH};
+        symlink( "$found/$tool", "$bin/$tool" ) or die "$tool: $!" if defined $found;
+    }
+    if ( defined $covering ) {
+        open( my $fh, '>', "$bin/tests-covering" ) or die $!;
+        print {$fh} "#!/bin/sh\n$covering";
+        close($fh) or die $!;
+        chmod 0755, "$bin/tests-covering";
+    }
+    return $bin;
+}
+
+# Runs the pre-commit hook the way git runs it, on a commit of a README, so that
+# neither Perl pass has anything to do and what decides is the tests alone.
+# The tests are not staged: they are what the hook runs, not what it judges.
+sub commit_readme {
+    my ( $bin, %tests ) = @_;
+    my $root = tempdir( CLEANUP => 1 );
+    mkdir "$root/t" or die $!;
+    foreach my $name ( keys %tests, '../README' ) {
+        open( my $fh, '>', "$root/t/$name" ) or die $!;
+        print {$fh} $tests{$name} // "words\n";
+        close($fh) or die $!;
+    }
+    system( 'git', '-C', $root, 'init', '-q' ) == 0 or die 'git init';      ## no critic (ProhibitShellDispatch) -- the hook reads a real index
+    system( 'git', '-C', $root, 'add', 'README' ) == 0 or die 'git add';    ## no critic (ProhibitShellDispatch)
+    local $ENV{PATH} = $bin;
+    my $out = `cd $root && sh $TEMPLATES/pre-commit 2>&1`;                    ## no critic (ProhibitShellDispatch) -- run the way git runs it
+    return ( $? >> 8, $out );
+}
+
+my $PASS = "use Test::More;\nok(1);\ndone_testing;\n";
+my $FAIL = "use Test::More;\nok(0, 'broken');\ndone_testing;\n";
+
 subtest 'the hook runs the tests last, and a failing test stops the commit' => sub {
     my $hook = slurp("$TEMPLATES/pre-commit");
-    ok( index( $hook, 'prove -lm -j8 t/' ) > index( $hook, 'perlcritic --profile' ), 'the tests run after the critic pass, on the files it judged' );
+    ok( index( $hook, 'prove -lm -j8' ) > index( $hook, 'perlcritic --profile' ), 'the tests run after the critic pass, on the files it judged' );
 
-    # Staged is a README, so neither Perl pass has anything to do, and what
-    # decides is the suite alone.  The tests themselves are not staged: the
-    # hook runs t/ whatever the commit holds.
-    my $run = sub {
-        my (%tests) = @_;
-        my $root = tempdir( CLEANUP => 1 );
-        mkdir "$root/t" or die $!;
-        foreach my $name ( keys %tests, '../README' ) {
-            open( my $fh, '>', "$root/t/$name" ) or die $!;
-            print {$fh} $tests{$name} // "words\n";
-            close($fh) or die $!;
-        }
-        system( 'git', '-C', $root, 'init', '-q' ) == 0 or die 'git init';      ## no critic (ProhibitShellDispatch) -- the hook reads a real index
-        system( 'git', '-C', $root, 'add', 'README' ) == 0 or die 'git add';    ## no critic (ProhibitShellDispatch)
-        my $out = `cd $root && sh $TEMPLATES/pre-commit 2>&1`;                    ## no critic (ProhibitShellDispatch) -- run the way git runs it
-        return ( $? >> 8, $out );
-    };
-
-    my $pass = "use Test::More;\nok(1);\ndone_testing;\n";
-    my ( $exit, $out ) = $run->( 'pass.t' => $pass );
+    my $bin = hook_path();
+    my ( $exit, $out ) = commit_readme( $bin, 'pass.t' => $PASS );
     is( $exit, 0, 'a suite that passes lets the commit through' ) or diag $out;
 
-    ( $exit, $out ) = $run->( 'pass.t' => $pass, 'fail.t' => "use Test::More;\nok(0, 'broken');\ndone_testing;\n" );
+    ( $exit, $out ) = commit_readme( $bin, 'pass.t' => $PASS, 'fail.t' => $FAIL );
     is( $exit, 1, 'a failing test stops it' ) or diag $out;
     like( $out, qr{prove[ ]-lv[ ]t/<file>[.]t}, 'and the hook says how to see why' );
+};
+
+subtest 'without tests-covering, the hook runs every test' => sub {
+    my ( $exit, $out ) = commit_readme( hook_path(), 'pass.t' => $PASS, 'fail.t' => $FAIL );
+    is( $exit, 1, 'so a failing test that the commit does not reach still stops it' ) or diag $out;
+    like( $out, qr/tests-covering[ ]is[ ]not[ ]on[ ]PATH/, 'and the hook says why it ran them all' );
+};
+
+subtest 'with tests-covering, the hook runs the tests it chooses' => sub {
+    my ( $exit, $out ) = commit_readme( hook_path("echo t/pass.t\n"), 'pass.t' => $PASS, 'fail.t' => $FAIL );
+    is( $exit, 0, 'so a failing test it did not choose does not stop the commit' ) or diag $out;
+    like( $out, qr/tests[ ]that[ ]ran[ ]what[ ]this[ ]commit[ ]changes/, 'and the hook says which tests it ran' );
+
+    ( $exit, $out ) = commit_readme( hook_path("echo t/fail.t\n"), 'pass.t' => $PASS, 'fail.t' => $FAIL );
+    is( $exit, 1, 'while a failing test it chose does' ) or diag $out;
+
+    ( $exit, $out ) = commit_readme( hook_path(''), 'fail.t' => $FAIL );
+    is( $exit, 0, 'and a commit that reaches no test runs none' ) or diag $out;
+    like( $out, qr/No[ ]test[ ]ran[ ]a[ ]line/, 'saying so' );
+
+    ( $exit, $out ) = commit_readme( hook_path("exit 3\n"), 'pass.t' => $PASS );
+    is( $exit, 1, 'and a tests-covering that fails stops the commit, rather than choosing nothing' ) or diag $out;
+};
+
+subtest 'the post-commit hook refreshes the records after a commit, and not during a rebase' => sub {
+    like( $skill, qr{^cp[ ]\$SKILL/templates/post-commit[ ]+git-hooks/post-commit$}m, 'the scaffold copies it' );
+    like( $skill, qr{^cp[ ]git-hooks/pre-commit[ ]git-hooks/post-commit[ ][.]git/hooks/$}m, 'and installs it beside the pre-commit hook' );
+
+    my $root = tempdir( CLEANUP => 1 );
+    my $repo = "$root/repo";
+    my $log  = "$root/refreshes";
+    mkdir $repo or die $!;
+
+    my @local = split /\n/, `git rev-parse --local-env-vars`;    ## no critic (ProhibitShellDispatch) -- git is what names them
+    local @ENV{@local};
+    delete @ENV{@local};
+
+    # Records the commit it ran for, and each GIT_ variable that reached it.
+    my $bin = hook_path(qq{echo "\$(git rev-parse HEAD) \$(env | sed -n 's/^\\(GIT_[A-Za-z0-9_]*\\)=.*/\\1/p' | tr '\\n' ' ')" >> '$log'\n});
+    local $ENV{PATH} = $bin;
+
+    my $git = sub {
+        my (@args) = @_;
+        my $said = `git -C $repo -c user.name=Tester -c user.email=tester\@test.test @args 2>&1`;    ## no critic (ProhibitShellDispatch) -- git runs the hook, which is what is under test
+        die "git @args: $said" if $?;
+        return $said;
+    };
+    my $commit = sub {
+        my ($file) = @_;
+        open( my $fh, '>', "$repo/$file" ) or die $!;
+        print {$fh} "$file\n";
+        close($fh) or die $!;
+        $git->("add $file");
+        $git->("commit -q -m $file");
+        return;
+    };
+
+    # The hook refreshes in the background, so this waits for the line for the
+    # commit at HEAD, and returns every line, which it then clears.
+    my $refreshed = sub {
+        chomp( my $head = $git->('rev-parse HEAD') );
+        my @lines;
+        foreach ( 1 .. 200 ) {
+            @lines = -e $log ? split /\n/, slurp($log) : ();
+            last if grep { index( $_, $head ) == 0 } @lines;
+            select( undef, undef, undef, 0.05 );    ## no critic (ProhibitSleepViaSelect) -- core-only, and Time::HiRes is not needed for a poll
+        }
+        unlink $log;
+        return @lines;
+    };
+
+    $git->('init -q');
+    mkdir "$repo/.git/hooks";
+    open( my $fh, '>', "$repo/.git/hooks/post-commit" ) or die $!;
+    print {$fh} slurp("$TEMPLATES/post-commit");
+    close($fh) or die $!;
+    chmod 0755, "$repo/.git/hooks/post-commit";
+
+    $commit->('a');
+    my @lines = $refreshed->();
+    is( scalar @lines, 1, 'a commit is refreshed once' );
+    unlike( $lines[0] // q{}, qr/GIT_/, 'and hands the refresh none of the variables that git set for the hook' );
+
+    my ($main) = $git->('branch --show-current') =~ m/(\S+)/;
+    $git->('switch -q -c topic');
+    $commit->($_) for qw{t1 t2 t3};
+    $refreshed->();
+    $git->("switch -q $main");
+    $commit->('b');
+    $refreshed->();
+
+    $git->("rebase -q $main topic");
+    $commit->('c');
+    is( scalar( () = $refreshed->() ), 1, 'three commits rebased, and only the commit after them is refreshed' );
 };
 
 subtest 'the tests the hook runs get none of the variables that point git at the repository' => sub {
