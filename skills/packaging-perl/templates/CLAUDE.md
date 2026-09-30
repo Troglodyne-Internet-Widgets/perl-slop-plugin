@@ -78,6 +78,12 @@ install them for you, and without the hooks the tree drifts from its style:
 cp git-hooks/pre-commit git-hooks/post-commit .git/hooks/
 ```
 
+A file that no test loads, such as a fixture, gets its tests from
+`.tests-covering-map.pl`.  A path that the map cannot place runs every test.
+If a commit runs every test but does not touch everything, the map probably
+needs a rule.  Add the rule in the same change, and name the tests that read
+the file.
+
 ## When something is slow
 
 Use `perl-slop:profiling-perl`.  Measure before you conclude anything, and

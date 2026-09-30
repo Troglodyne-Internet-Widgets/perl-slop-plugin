@@ -90,6 +90,7 @@ cp $SKILL/templates/gitignore             .gitignore
 cp $SKILL/templates/mailmap               .mailmap
 cp $SKILL/templates/pre-commit            git-hooks/pre-commit
 cp $SKILL/templates/post-commit           git-hooks/post-commit
+cp $SKILL/templates/tests-covering-map.pl .tests-covering-map.pl
 cp $SKILL/templates/CLAUDE.md             CLAUDE.md
 
 chmod +x git-hooks/pre-commit git-hooks/post-commit
@@ -209,9 +210,16 @@ test fails, the hook stops the commit and prints the command that shows why:
 
 Which tests run is the choice of `tests-covering`, from Perl::Tests::Covering.
 It reads the staged diff, and names the tests that ran a line the diff
-changes. A file that its records cannot place, such as `dist.ini` or a new
-module, chooses every test. A machine without `tests-covering` runs all of
-`t/`, and the hook says so.
+changes. A machine without `tests-covering` runs all of `t/`, and the hook
+says so.
+
+A change to a file that no test loads goes to **`.tests-covering-map.pl`**. The
+template map says that no test reads the documentation, the files that only
+`dzil` reads such as `dist.ini`, the configuration of the tools, the hooks, CI
+and `xt/`. So a commit of those runs no test. A file that the map does not
+place, such as a fixture, runs every test. When a test reads a file without
+loading it, give the map a rule that names that test. `perldoc
+Perl::Tests::Covering` has the interface, under THE MAP.
 
 **`git-hooks/post-commit`** keeps the records of `tests-covering` up to date.
 After each commit, it runs the tests that the commit made stale under

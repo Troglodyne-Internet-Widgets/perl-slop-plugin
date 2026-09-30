@@ -225,6 +225,31 @@ subtest 'with tests-covering, the hook runs the tests it chooses' => sub {
     is( $exit, 1, 'and a tests-covering that fails stops the commit, rather than choosing nothing' ) or diag $out;
 };
 
+subtest 'the map says which files no test reads, and leaves the rest to the records' => sub {
+    like( $skill, qr{^cp[ ]\$SKILL/templates/tests-covering-map[.]pl[ ]+[.]tests-covering-map[.]pl$}m, 'the scaffold copies it to the name tests-covering looks for' );
+
+    my $map = do "$TEMPLATES/tests-covering-map.pl";
+    is( ref $map, 'CODE', 'it returns the map' ) or return diag( $@ || $! );
+
+    foreach my $path (
+        qw{
+        Changes LICENSE README.md CLAUDE.md docs/guide.md docs/guide.pod
+        dist.ini weaver.ini prereqs.yml
+        .perlcriticrc .perltidyrc .pod_stopwords .preferred_modules.ini .mailmap .gitignore .tests-covering-map.pl
+        git-hooks/pre-commit git-hooks/post-commit .github/workflows/test.yml xt/author/critic.t
+        }
+      )
+    {
+        is_deeply( [ $map->($path) ], [q{}], "$path reaches no test" );
+    }
+
+    # A module that no test loads yet, a test library, a fixture, a script and
+    # POD beside the code are for the records, or for every test.
+    foreach my $path (qw{lib/Some/Module.pm lib/Some/Module.pod t/lib/Helper.pm t/data/fixture.json share/table.csv bin/tool}) {
+        is_deeply( [ $map->($path) ], [], "$path is left to the records" );
+    }
+};
+
 subtest 'the post-commit hook refreshes the records after a commit, and not during a rebase' => sub {
     like( $skill, qr{^cp[ ]\$SKILL/templates/post-commit[ ]+git-hooks/post-commit$}m, 'the scaffold copies it' );
     like( $skill, qr{^cp[ ]git-hooks/pre-commit[ ]git-hooks/post-commit[ ][.]git/hooks/$}m, 'and installs it beside the pre-commit hook' );
