@@ -160,9 +160,9 @@ else
 fi
 
 # Last, because the tests read the files that the tidy pass wrote.  Whatever is
-# staged, and not only Perl: a change to dist.ini, a share/ file or a fixture
-# breaks a test as surely as a change to a module does.  -l for lib/, as
-# `dzil test` finds it.
+# staged, and not only Perl: a change to a share/ file or a fixture breaks a
+# test as surely as a change to a module does.  -l for lib/, as `dzil test`
+# finds it.
 #
 # Without the GIT_ variables that git sets for this hook.  It sets
 # GIT_INDEX_FILE, and GIT_DIR too in a worktree, and git obeys them over -C.  So
@@ -193,11 +193,12 @@ then
 fi
 
 # tests-covering chooses the tests that ran a line the diff changes, from the
-# records that git-hooks/post-commit keeps up to date.  --unexplained all runs
-# every test for a file that the records cannot place, such as dist.ini or a
-# new module.  --full-index, because it matches each file to its records by
-# the blob id on the index line of the diff, and an abbreviated id matches
-# nothing.
+# records that git-hooks/post-commit keeps up to date.  It asks
+# .tests-covering-map.pl about each file that no test loads, and the map names
+# the files that no test reads, such as dist.ini.  --unexplained all runs every
+# test for a file that neither can place, such as a fixture.  --full-index,
+# because it matches each file to its records by the blob id on the index line
+# of the diff, and an abbreviated id matches nothing.
 tests=$(git diff --cached --full-index | tests-covering --diff --unexplained all) || exit 1
 if [ -z "$tests" ]
 then
