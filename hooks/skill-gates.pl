@@ -154,7 +154,7 @@ sub decide {
     my $tool = $input->{tool_name}  // q{};
     my $args = $input->{tool_input} // {};
 
-    if ( $tool =~ m/\A(?:Edit|Write|MultiEdit|NotebookEdit)\z/ ) {
+    if ( List::Util::any { $tool eq $_ } qw{Edit Write MultiEdit NotebookEdit} ) {
         my $file = $args->{file_path} // $args->{notebook_path} // return;
         return edit_gate( $input, [ [ $file, $args->{content} ] ] );
     }
