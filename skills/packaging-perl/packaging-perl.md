@@ -171,14 +171,12 @@ and telling you nothing. Turn it on in a distribution that ships programs too,
 and put its authordep line back when you do.
 
 `.preferred_modules.ini` is read by the `PreferredModules` policy and is where
-"use this rather than that" lives — `Cpanel::JSON::XS` over `JSON::PP`,
-`YAML::XS` over `YAML::PP`, `Crypt::PRNG` over `rand`, `Readonly` over
-`use constant`. A `[constant]` section works because PPI reads `use constant`
-as a use of the module `constant`. `.pod_stopwords` is read
-by `Documentation::PodSpelling`, which runs aspell over your POD: it holds the
-vocabulary no dictionary has, the licence words from the COPYRIGHT section
-Pod::Weaver generates, and the names in that section and in AUTHORS: yours and
-the copyright holder's, which you add. A misspelling does not belong in it.
+"use this rather than that" lives.
+`.pod_stopwords` is read by `Documentation::PodSpelling`, which runs aspell
+over your POD: it holds the vocabulary no dictionary has, the licence words
+from the COPYRIGHT section Pod::Weaver generates, and the names in that
+section and in AUTHORS: yours and the copyright holder's, which you add.
+A misspelling does not belong in it.
 
 **`Changes`** exists because `[CheckChangesHasContent]` refuses to release
 without it. See below.
