@@ -1,0 +1,61 @@
+#!/bin/bash
+# Make this machine able to run `claude plugin eval` with shell commands, which
+# is what t/release-evals.t needs.  Safe to run again: each step happens only
+# if the probe after the step before it still fails.
+#
+# A run grants Bash inside a bubblewrap sandbox, and socat carries its network.
+# Ubuntu 24.04 sets kernel.apparmor_restrict_unprivileged_userns, which
+# refuses user namespaces to any program without an AppArmor profile that
+# allows them, and bwrap has none.  Then every shell command of a run fails
+# with "bwrap: loopback: Failed RTM_NEWADDR", Claude falls back to the Write
+# tool, and a case scores what Write alone could do.
+#
+# The profile written here lets any local user make user namespaces through
+# bwrap, which is how every Ubuntu before 23.10 behaved for every program.
+set -euo pipefail
+
+PROFILE=/etc/apparmor.d/bwrap
+
+probe() {
+    bwrap --ro-bind / / --dev /dev --unshare-net true 2>/dev/null
+}
+
+missing=()
+command -v bwrap >/dev/null || missing+=(bubblewrap)
+command -v socat >/dev/null || missing+=(socat)
+if ((${#missing[@]})); then
+    echo "Installing ${missing[*]}"
+    sudo apt-get install -y "${missing[@]}"
+fi
+
+if probe; then
+    echo 'bwrap can make its namespaces; nothing to do.'
+    exit 0
+fi
+
+if [[ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null)" != 1 ]]; then
+    echo 'bwrap cannot make its namespaces, and AppArmor is not what refuses them:' >&2
+    bwrap --ro-bind / / --dev /dev --unshare-net true || true
+    exit 1
+fi
+
+echo "Writing $PROFILE, which allows user namespaces to /usr/bin/bwrap"
+sudo tee "$PROFILE" >/dev/null <<'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+
+  include if exists <local/bwrap>
+}
+EOF
+sudo apparmor_parser -r "$PROFILE"
+
+if probe; then
+    echo 'bwrap can make its namespaces now.'
+else
+    echo "bwrap still cannot make its namespaces after loading $PROFILE:" >&2
+    bwrap --ro-bind / / --dev /dev --unshare-net true || true
+    exit 1
+fi
