@@ -6,16 +6,20 @@ use re '/aa';
 
 =head1 NAME
 
-t/packaging-templates.t - the two perlcritic profiles the packaging-perl skill
-scaffolds with, and what the skill says about them
+t/packaging-templates.t - the templates the packaging-perl skill scaffolds
+with, and the hooks among them
 
 =head1 DESCRIPTION
 
 There are two profiles because the perl a distribution targets decides how
 strict it can be.  What makes them a pair rather than two files is that one
 leaves out exactly the policies the language enforces and the other names them,
-so the only thing worth asserting is that relationship -- and that the skill,
-the scaffold and dist.ini still agree with it.
+so the thing worth asserting is that relationship -- and that dist.ini and the
+evals still agree with it.
+
+Whether Claude, following the skill, puts these templates into a distribution
+intact is a question about what Claude does, and F<t/release-evals.t> asks it.
+Nothing here reads the skill's own prose.
 
 Core-only on purpose: this asserts on the text of the templates, so it runs
 wherever the plugin does rather than only where Perl::Critic and twenty policy
@@ -54,7 +58,6 @@ my %ENFORCED_FROM = (
 
 my $modern = slurp("$TEMPLATES/perlcriticrc");
 my $compat = slurp("$TEMPLATES/perlcriticrc.compat");
-my $skill  = slurp("$SKILL/packaging-perl.md");
 my $dist   = slurp("$TEMPLATES/dist.ini");
 
 # A policy is enabled by a [Name] line of its own, not by being talked about in
@@ -105,19 +108,6 @@ subtest 'everything else in the pair is the same set' => sub {
 
     is_deeply( \@unexplained, [], 'and the compat profile adds only what a newer perl would enforce' )
       or diag( 'unexplained in the compat profile: ' . join( ', ', @unexplained ) );
-};
-
-subtest 'the skill tells the same story as the files' => sub {
-    like( $skill, qr/^##\s+Ask\s+which\s+perl/m, 'it asks before it copies' );
-
-    foreach my $policy ( sort keys %ENFORCED_FROM ) {
-        my $from = $ENFORCED_FROM{$policy};
-
-        like( $skill, qr/\Q$policy\E/, "the table names $policy" );
-        like( $skill, qr/\Q$policy\E[^\n]*\Q$from\E/, "and gives $from as the version that retires it" );
-    }
-
-    like( $skill, qr/perlcriticrc\.compat/, 'and names the second profile so it can be copied' );
 };
 
 subtest 'the hook judges what it tidied, with the profile that was copied' => sub {
@@ -226,8 +216,6 @@ subtest 'with tests-covering, the hook runs the tests it chooses' => sub {
 };
 
 subtest 'the map says which files no test reads, and leaves the rest to the records' => sub {
-    like( $skill, qr{^cp[ ]\$SKILL/templates/tests-covering-map[.]pl[ ]+[.]tests-covering-map[.]pl$}m, 'the scaffold copies it to the name tests-covering looks for' );
-
     my $map = do "$TEMPLATES/tests-covering-map.pl";
     is( ref $map, 'CODE', 'it returns the map' ) or return diag( $@ || $! );
 
@@ -251,9 +239,6 @@ subtest 'the map says which files no test reads, and leaves the rest to the reco
 };
 
 subtest 'the post-commit hook refreshes the records after a commit, and not during a rebase' => sub {
-    like( $skill, qr{^cp[ ]\$SKILL/templates/post-commit[ ]+git-hooks/post-commit$}m, 'the scaffold copies it' );
-    like( $skill, qr{^cp[ ]git-hooks/pre-commit[ ]git-hooks/post-commit[ ][.]git/hooks/$}m, 'and installs it beside the pre-commit hook' );
-
     my $root = tempdir( CLEANUP => 1 );
     my $repo = "$root/repo";
     my $log  = "$root/refreshes";
@@ -414,7 +399,6 @@ subtest 'what the profiles read is scaffolded and shipped' => sub {
     # POD should not be using in the first place.
     my @british = grep { m/is(?:e|es|ed|ing|ation)$/ && $stop{ ( my $us = $_ ) =~ s/is(e|es|ed|ing|ation)$/iz$1/r } } @words;
     is_deeply( \@british, [], 'and no British spelling of a word it has in American' );
-    like( $skill, qr/cp[^\n]*pod_stopwords/, 'and the scaffold copies it' );
 
     # Every policy outside Perl::Critic's own distribution needs a line, or a
     # fresh clone cannot install what the profile names.
@@ -442,6 +426,19 @@ subtest 'the preferred modules prefer Readonly to use constant' => sub {
     like( $section, qr/^reason\s*=/m,                  'and says why' );
 };
 
+# Each packaging-perl eval counts the policy sections of the .perlcriticrc that
+# Claude wrote, against the profile its floor picks.  A template that gains or
+# loses a policy has to move that count too, or the eval fails at release time.
+subtest 'the evals count the sections that the templates have' => sub {
+    my $count = sub { my @sections = $_[0] =~ m/^\[[^\]\n]+\]$/mg; return scalar @sections };
+    foreach my $case ( [ 'packaging-perl-compat', $compat ], [ 'packaging-perl-modern', $modern ] ) {
+        my ( $name, $profile ) = @$case;
+        my $grader = slurp("$FindBin::Bin/../evals/$name/graders/profile-copied-whole.md");
+        my ($expected) = $grader =~ m/^match:\s*"count:(\d+)"$/m;
+        is( $expected, $count->($profile), "evals/$name counts the sections of its profile" );
+    }
+};
+
 subtest 'the version dzil stamps is not code above use strict' => sub {
 
     # PkgVersion inserts a $VERSION line after the package line unless it is told
@@ -462,10 +459,8 @@ subtest 'the perl floor is written where PrereqsFile reads it' => sub {
 
     my $prereqs = slurp("$TEMPLATES/prereqs.yml");
     like( $prereqs, qr/^\s+perl:\s*'\{\{PERL_FLOOR\}\}'$/m, 'the template declares the perl floor' );
-    like( $skill, qr/cp[^\n]*templates\/prereqs\.yml\s+prereqs\.yml/, 'the scaffold copies it under the name PrereqsFile reads' );
-    like( $skill, qr/sed[^\n]*\bprereqs\.yml\b/,                        'and fills in its placeholder' );
 
-    foreach my $file ( "$SKILL/packaging-perl.md", map {"$TEMPLATES/$_"} qw{CLAUDE.md perlcriticrc perlcriticrc.compat} ) {
+    foreach my $file ( map {"$TEMPLATES/$_"} qw{CLAUDE.md perlcriticrc perlcriticrc.compat} ) {
         my $text = slurp($file);
         my @told = $text =~ m/(prereqs\.yaml)(?![^\n]*not an alternative)/g;
         is( scalar @told, 0, "$file tells nobody to write prereqs.yaml" );
