@@ -418,7 +418,7 @@ subtest 'what the profiles read is scaffolded and shipped' => sub {
 
     # Every policy outside Perl::Critic's own distribution needs a line, or a
     # fresh clone cannot install what the profile names.
-    foreach my $policy ( 'ProhibitPrintSTDERR', 'Variables::ProhibitUnusedVarsStricter', 'RegularExpressions::PreventUselessMetacharacterEscapes' ) {
+    foreach my $policy ( 'ProhibitPrintSTDERR', 'Variables::ProhibitUnusedVarsStricter', 'RegularExpressions::PreventUselessMetacharacterEscapes', 'ValuesAndExpressions::ProhibitLiteralArithmetic' ) {
         like( $dist, qr/authordep\s+Perl::Critic::Policy::\Q$policy\E/, "dist.ini declares the authordep for $policy" );
     }
 
