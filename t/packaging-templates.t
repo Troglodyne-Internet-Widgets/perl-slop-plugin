@@ -431,6 +431,18 @@ subtest 'what the profiles read is scaffolded and shipped' => sub {
     unlike( $dist, qr/authordep[^\n]*ProhibitUnusedDefinitions/, 'and does not ask for it to be installed' );
 };
 
+# PreferredModules reads use constant as a use of the module constant, so a
+# [constant] section is all it takes.  A constant from use constant is a
+# bareword that does not interpolate and cannot be searched for by a sigil.
+subtest 'the preferred modules prefer Readonly to use constant' => sub {
+    my $ini = slurp("$TEMPLATES/preferred_modules.ini");
+    my ($section) = $ini =~ m/^\[constant\]\n((?:[^\[\n][^\n]*\n)*)/m;
+    ok( defined $section, 'the template has a [constant] section' ) or return;
+    like( $section, qr/^prefer\s*=\s*Readonly\s*$/m, 'and it prefers Readonly' );
+    like( $section, qr/^reason\s*=/m,                  'and says why' );
+    like( $skill, qr/`Readonly`[ ]over\s+`use[ ]constant`/, 'and the skill says so with the others' );
+};
+
 subtest 'the version dzil stamps is not code above use strict' => sub {
 
     # PkgVersion inserts a $VERSION line after the package line unless it is told
