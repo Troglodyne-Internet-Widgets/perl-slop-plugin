@@ -90,6 +90,7 @@ formats = #!/usr/bin/env perl
 [RegularExpressions::ProhibitRegexForStringEquality]
 [Subroutines::ProhibitUnderscorePrivateSubs]
 [Subroutines::ProhibitSingleUseLexicalSubs]
+[ValuesAndExpressions::ProhibitLiteralArithmetic]
 [ProhibitUseLib]
 [ProhibitUsageSubs]
 [RequireQwForLiteralLists]
