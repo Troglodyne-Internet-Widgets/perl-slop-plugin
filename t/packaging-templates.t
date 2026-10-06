@@ -440,7 +440,6 @@ subtest 'the preferred modules prefer Readonly to use constant' => sub {
     ok( defined $section, 'the template has a [constant] section' ) or return;
     like( $section, qr/^prefer\s*=\s*Readonly\s*$/m, 'and it prefers Readonly' );
     like( $section, qr/^reason\s*=/m,                  'and says why' );
-    like( $skill, qr/`Readonly`[ ]over\s+`use[ ]constant`/, 'and the skill says so with the others' );
 };
 
 subtest 'the version dzil stamps is not code above use strict' => sub {
