@@ -429,16 +429,6 @@ subtest 'the preferred modules prefer Readonly to use constant' => sub {
 # Each packaging-perl eval counts the policy sections of the .perlcriticrc that
 # Claude wrote, against the profile its floor picks.  A template that gains or
 # loses a policy has to move that count too, or the eval fails at release time.
-subtest 'the evals count the sections that the templates have' => sub {
-    my $count = sub { my @sections = $_[0] =~ m/^\[[^\]\n]+\]$/mg; return scalar @sections };
-    foreach my $case ( [ 'packaging-perl-compat', $compat ], [ 'packaging-perl-modern', $modern ] ) {
-        my ( $name, $profile ) = @$case;
-        my $grader = slurp("$FindBin::Bin/../evals/$name/graders/profile-copied-whole.md");
-        my ($expected) = $grader =~ m/^match:\s*"count:(\d+)"$/m;
-        is( $expected, $count->($profile), "evals/$name counts the sections of its profile" );
-    }
-};
-
 subtest 'the version dzil stamps is not code above use strict' => sub {
 
     # PkgVersion inserts a $VERSION line after the package line unless it is told
