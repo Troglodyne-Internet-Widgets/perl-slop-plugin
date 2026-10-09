@@ -91,6 +91,7 @@ formats = #!/usr/bin/env perl
 [Subroutines::ProhibitUnderscorePrivateSubs]
 [Subroutines::ProhibitSingleUseLexicalSubs]
 [ValuesAndExpressions::ProhibitLiteralArithmetic]
+[BuiltinFunctions::ProhibitIndirectBooleanGrep]
 [ProhibitUseLib]
 [ProhibitUsageSubs]
 [RequireQwForLiteralLists]
