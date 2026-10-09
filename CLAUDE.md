@@ -1,5 +1,20 @@
 # perl-slop-plugin
 
+## Testing a skill
+
+A skill has two things to test, and each needs a different kind of test.
+
+The first is the files of the skill: its instructions, and the templates and scripts that ship with it. The tests in `t/` cover those, with no Claude session. Test what a program does with such a file, not what the file says. The `testing-perl` skill says why.
+
+The second is what Claude makes with the skill. For packaging-perl, that is a distribution that builds, with a profile that enables the right policies. Only a run of Claude makes that output. So a case in `evals/` gives Claude a request, and `t/release-evals.t` runs the real tools on what the run built. A grader of `claude plugin eval` can only read a file, the trace or a tool call. So a check that must run a program goes in `check_distribution` in `t/release-evals.t`, not in a grader.
+
+Use the cheapest check that answers the question:
+
+- If the text of a skill did not change, do not pay for an eval. `t/release-evals.t` runs only the skills whose files or cases changed since the last release.
+- If only a template changed, scaffold a distribution from the templates by hand. Then run the checks on it with no Claude session: `CHECK_WORKSPACE=<dir that holds it> CHECK_CASE=<case> prove -v t/release-evals.t`.
+- To try a change to the checks themselves, run them in the same way, on a workspace that you already have.
+- If the text of a skill, or a case, changed, run the paid evals. The release runs them in any case.
+
 ## Releasing
 
 A release changes two repositories: this one and the marketplace, `Troglodyne-Internet-Widgets/claude-plugins-marketplace`. The marketplace pins the plugin version, so a tag here does not reach installs by itself.
