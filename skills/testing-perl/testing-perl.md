@@ -111,6 +111,11 @@ while invalid input results in an error rather than acceptable-looking but inval
 
 When a piece of code is removed, don't assert that its behavior isn't there - testing undefined behavior is a waste of time.
 
+Don't test the *form* of inputs but *behaviors* of the SUT consuming them.
+An input is any file that another program reads: a configuration, a template, a generated script.
+Grepping it for a line proves only that the line is there, never that the program reading it does what you meant.
+So run that program on it and assert on what it did.
+
 # Running tests
 
 Run tests with `prove -lm -j8`
