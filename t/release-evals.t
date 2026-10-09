@@ -62,7 +62,9 @@ C<--keep-temp> keeps each run's directory, and the distribution is under
 F<sealed/home/cwd> in it.  The distribution is model-written code, and its
 F<dist.ini> and F<.git> are configuration that dzil and git load.  So the checks
 run on a copy, in bwrap, with no network and nothing writable but the copy.
-Each kept directory is removed after its checks.
+Each kept directory is removed after its checks.  A distribution that fails a
+check is copied first, to a directory under F</tmp> that the test names, so
+that the failure can be read.
 
 C<CHECK_WORKSPACE=path/to/workspace prove t/release-evals.t> runs only these
 checks, on one workspace, with no Claude session.  That is how to try a change
@@ -122,6 +124,7 @@ sub check_distribution {
 
     my @found = grep { -f "$_/dist.ini" } glob("$workspace/*");
     is( scalar @found, 1, "$label: the run left one distribution" ) or return;
+    my $failed_before = grep { !$_ } Test::More->builder->summary;
 
     my $copy = tempdir( CLEANUP => 1 );
     system( 'cp', '-a', $found[0], $copy ) == 0 or return fail("$label: copy $found[0]");
@@ -163,6 +166,14 @@ sub check_distribution {
     close($fh) or die "$dist: $!";
     my ($preferred) = $sandboxed->( $dist, {}, qw{perlcritic --profile .perlcriticrc --single-policy PreferredModules --verbose %m\n zz-constant.pl} );
     like( $preferred, qr/Readonly/, "$label: and its profile steers use constant to Readonly" );
+
+    # The run's directory is removed after this, so a distribution that failed
+    # a check is kept where it can be read.
+    if ( ( grep { !$_ } Test::More->builder->summary ) > $failed_before ) {
+        my $keep = tempdir( 'packaging-eval-XXXXXX', TMPDIR => 1, CLEANUP => 0 );
+        system( 'cp', '-a', $found[0], $keep );
+        diag("$label: the distribution is kept at $keep/" . basename( $found[0] ));
+    }
     return;
 }
 
