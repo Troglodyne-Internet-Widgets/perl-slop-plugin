@@ -92,6 +92,13 @@ formats = #!/usr/bin/env perl
 [Subroutines::ProhibitSingleUseLexicalSubs]
 [ValuesAndExpressions::ProhibitLiteralArithmetic]
 [BuiltinFunctions::ProhibitIndirectBooleanGrep]
+# What ProhibitMutatingListFunctions reports, which this replaces, and a block
+# that changes $_ through a sub that it calls.
+[ControlStructures::ProhibitMutatingListFunctionsStricter]
+# A sub that returns the result of a syscall or an eval, called where nothing
+# looks at the result.  The same functions as RequireCheckedSyscalls below.
+[ErrorHandling::RequireCheckedIndirectResults]
+exclude_functions = print
 [ProhibitUseLib]
 [ProhibitUsageSubs]
 [RequireQwForLiteralLists]
@@ -127,6 +134,10 @@ allow = re
 ;   ControlStructures::ProhibitDeepNests          scores nesting and every
 ;   Subroutines::ProhibitExcessComplexity         break in flow, where these
 ;                                                 count branches
+;   ControlStructures::ProhibitMutatingListFunctions
+;                                               ProhibitMutatingListFunctionsStricter,
+;                                                 which reports all of it, and
+;                                                 a sub that the block calls
 ;   InputOutput::ProhibitBacktickOperators      logicLAB::ProhibitShellDispatch
 ;   Modules::ProhibitEvilModules                PreferredModules
 ;   Subroutines::ProhibitUnusedPrivateSubroutines  ProhibitUnusedDefinitions,
@@ -171,7 +182,6 @@ allow = re
 ; repeated that, and ran perltidy over the whole file on every check.
 [CodeLayout::RequireTrailingCommas]
 [ControlStructures::ProhibitLabelsWithSpecialBlockNames]
-[ControlStructures::ProhibitMutatingListFunctions]
 [ControlStructures::ProhibitNegativeExpressionsInUnlessAndUntilConditions]
 [ControlStructures::ProhibitUnreachableCode]
 [ControlStructures::ProhibitUntilBlocks]
