@@ -156,7 +156,8 @@ then explaining it in a comment nobody asked for.
 **`weaver.ini`** generates the POD boilerplate — `NAME`, `VERSION`, `AUTHORS`,
 `COPYRIGHT AND LICENSE` — from what `dist.ini` already knows, and collects
 `=method` and `=attr` into sections. Write the interesting POD; let it write the
-rest.
+rest. It does not write the abstract in `NAME`. You write that, as an
+`# ABSTRACT:` comment in each module. See below.
 
 **`.perlcriticrc`** is the house policy set, whichever of the two profiles the
 question above picked, and it names a good number of policies that are not in
@@ -286,6 +287,27 @@ coin toss which. Put the prose in the module's POD, where `perldoc` finds it too
 **Author dependencies that `dzil authordeps` cannot see.** Covered above, and
 worth repeating because the symptom appears on somebody else's machine rather
 than yours: yours has them installed already.
+
+**A module with no `# ABSTRACT:` comment.** `NAME` in the woven POD is the
+package and its abstract. The abstract of the main module is also the abstract
+of the distribution. Both come from one comment below the `package` line:
+
+```perl
+package Text::Rot13;
+
+# ABSTRACT: Rotate the letters of a string by thirteen
+```
+
+Without it, `dzil build` stops with "Unable to extract an abstract from
+lib/Text/Rot13.pm". When you create a module, write one in it. In the release
+evals, three of six new distributions had none, so none of them built.
+
+**A SYNOPSIS that does not compile on its own.** `[@TestingMania]` generates
+`t/author-synopsis.t`, which compiles the code of each SYNOPSIS by itself. The
+`use` lines of the module do not reach that code. So a SYNOPSIS that calls `say`
+stops `dzil test` with a syntax error "near say". Write the SYNOPSIS as a caller
+writes it: `use` the module, and enable `say` before you call it, or call `print`.
+In the release evals, three of six new distributions failed this way.
 
 **`our $VERSION` written by hand.** `[PkgVersion]` stamps every module from
 `dist.ini` at build time. A version in the source is a second answer to the same
