@@ -165,6 +165,11 @@ core Perl::Critic. That is what the second block of authordeps is for. Each
 profile's own header says what it assumes about the perl and which policies that
 assumption pays for, so read the top of the one you copied before editing it.
 
+Comment a profile with `#`. Perl::Critic reads `;` as a comment too, so a line
+that starts with `;` works, but it is a habit from `dist.ini`. There the `;`
+matters, because `dzil authordeps` reads only the lines that start with
+`; authordep`.
+
 One policy ships commented out in both profiles. `ProhibitUnusedDefinitions`
 counts calls from `bin/` and `lib/`, so in a distribution that is only a library
 it reports every sub the library exists to offer -- the policy working correctly
