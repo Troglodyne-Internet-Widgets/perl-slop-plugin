@@ -10,4 +10,6 @@ pm_to_blib
 blib/
 cover_db/
 .build
-{{DIST}}-*
+# At the root, where dzil build leaves them.  Unanchored, the pattern also
+# hides a test named after the distribution, such as t/{{DIST}}-Foo.t.
+/{{DIST}}-*

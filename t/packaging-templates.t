@@ -457,4 +457,27 @@ subtest 'the perl floor is written where PrereqsFile reads it' => sub {
     }
 };
 
+subtest 'the gitignore hides the build of the distribution and not its tests' => sub {
+    my $repo = tempdir( CLEANUP => 1 );
+
+    my @local = split /\n/, `git rev-parse --local-env-vars`;    ## no critic (ProhibitShellDispatch) -- git is what names them
+    local @ENV{@local};
+    delete @ENV{@local};
+    system( qw{git init -q}, $repo ) == 0 or die "git init failed\n";
+
+    ( my $ignore = slurp("$TEMPLATES/gitignore") ) =~ s/\{\{DIST\}\}/Foo-Bar/g;
+    open( my $fh, '>', "$repo/.gitignore" ) or die "$repo/.gitignore: $!";
+    print {$fh} $ignore;
+    close($fh);
+
+    my $ignored = sub {
+        my ($path) = @_;
+        return system( qw{git -C}, $repo, qw{check-ignore -q --no-index}, $path ) == 0 ? 1 : 0;
+    };
+    ok( $ignored->('Foo-Bar-0.001.tar.gz'), 'the tarball that dzil build leaves at the root' );
+    ok( $ignored->('Foo-Bar-0.001/Makefile.PL'), 'and the directory it builds in' );
+    ok( !$ignored->('t/Foo-Bar-Baz.t'), 'but not a test named after the distribution' );
+    ok( !$ignored->('lib/Foo/Foo-Bar-notes.pod'), 'nor any other file whose name starts with it' );
+};
+
 done_testing();
