@@ -122,8 +122,13 @@ Check it before writing any code:
 
 ```
 dzil authordeps --missing | cpanm --notest
-dzil build && dzil test
+dzil build && dzil test --release
 ```
+
+Plain `dzil test` runs the author tests and not the release tests.
+`[@TestingMania]` makes some of its tests release tests, unused variables among
+them, and `dzil release` runs them.  So check with `--release`, or the first
+release finds what the checks did not.
 
 ## What each file is doing
 
@@ -336,6 +341,29 @@ none of them test what your code does. `dzil test` passing on a distribution
 with an empty `t/` means the packaging is fine and says nothing else. See
 [perl-slop:testing-perl](../testing-perl/testing-perl.md).
 
+**Prose in `=head1 SEE ALSO`.** `[SeeAlso]` in `weaver.ini` rebuilds that
+section as a list, with one item for each line. It wraps an item in
+`L<...|...>` unless the whole line is one `L<>`. So the line
+`L<perlop/"tr">, which does the work.` becomes a nested `L<>` in the build.
+The POD tests of the build then fail on a source that `podchecker` passes. Put
+one module name or one `L<>` on each line of that section, and nothing else.
+Put the prose about it in the DESCRIPTION.
+
+**A lexical whose only use is `tr///r`.** Test::Vars 0.017 does not count
+`tr///r` as a use of the variable. `[@TestingMania]` runs it as the release
+test `t/release-unused-vars.t`. So this sub fails with
+`$string is used once in &Text::Rot13::rot13`:
+
+```perl
+sub rot13 ($string) { return $string =~ tr/A-Za-z/N-ZA-Mn-za-m/r }
+```
+
+It counts `s///r`, and it counts a copy that `tr///` then changes:
+
+```perl
+sub rot13 ($string) { ( my $rotated = $string ) =~ tr/A-Za-z/N-ZA-Mn-za-m/; return $rotated }
+```
+
 **A test file with POD and no shebang.**
 `Documentation::RequirePackageMatchesPodName` reads a file without one as a
 module, and then wants its POD `NAME` to match the package -- which in a `.t` is
@@ -384,9 +412,9 @@ header says only "for scripts" is one that will drift into a copy of the first.
 ## Releasing
 
 ```
-dzil test          # author tests as well as yours
-dzil build         # look in the tarball; the MANIFEST is a common surprise
-dzil release       # tags, pushes, uploads
+dzil test --release  # release and author tests as well as yours
+dzil build           # look in the tarball; the MANIFEST is a common surprise
+dzil release         # tags, pushes, uploads
 ```
 
 `dzil release` runs `[Git::Check]` first and refuses on a dirty tree — with

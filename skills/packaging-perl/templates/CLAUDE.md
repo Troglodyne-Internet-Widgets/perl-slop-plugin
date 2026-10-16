@@ -98,7 +98,7 @@ clear error.  Read it before the first release, not during it.
 
 ```
 dzil authordeps --missing | cpanm --notest
-dzil build && dzil test
+dzil build && dzil test --release
 ```
 
 ## Commits and pull requests
