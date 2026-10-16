@@ -128,33 +128,33 @@ allow = re
 # Perl::Critic's own policies.  only = 1 loads nothing that is not named, so
 # each of these has to be, and the ones that are absent are absent on purpose.
 #
-; Not here, because something above already does the job better:
-;   CodeLayout::ProhibitQuotedWordLists         RequireQwForLiteralLists
-;   ControlStructures::ProhibitCascadingIfElse  CognitiveComplexity, which
-;   ControlStructures::ProhibitDeepNests          scores nesting and every
-;   Subroutines::ProhibitExcessComplexity         break in flow, where these
-;                                                 count branches
-;   ControlStructures::ProhibitMutatingListFunctions
-;                                               ProhibitMutatingListFunctionsStricter,
-;                                                 which reports all of it, and
-;                                                 a sub that the block calls
-;   InputOutput::ProhibitBacktickOperators      logicLAB::ProhibitShellDispatch
-;   Modules::ProhibitEvilModules                PreferredModules
-;   Subroutines::ProhibitUnusedPrivateSubroutines  ProhibitUnusedDefinitions,
-;                                                 which counts calls from bin/
-;                                                 and lib/, private or not
-;   TestingAndDebugging::RequireUseWarnings     RequireFatalWarnings
-;   ValuesAndExpressions::ProhibitLeadingZeros  Plicease::ProhibitLeadingZeros
-;   Modules::RequireVersionVar                  [PkgVersion] in dist.ini
-;   ErrorHandling::RequireCarping               die with context, and
-;                                                 Carp::Always for the trace
-;
-; The five that the other profile leaves to the language are named at the top of
-; this one, because down here the language does not enforce them.
-;
-; Documentation::RequirePodSections is out as well: the sections it asks for are
-; the ones Pod::Weaver writes at build, and weaver.ini names them AUTHORS and
-; COPYRIGHT AND LICENSE where the policy wants AUTHOR and LICENSE AND COPYRIGHT.
+# Not here, because something above already does the job better:
+#   CodeLayout::ProhibitQuotedWordLists         RequireQwForLiteralLists
+#   ControlStructures::ProhibitCascadingIfElse  CognitiveComplexity, which
+#   ControlStructures::ProhibitDeepNests          scores nesting and every
+#   Subroutines::ProhibitExcessComplexity         break in flow, where these
+#                                                 count branches
+#   ControlStructures::ProhibitMutatingListFunctions
+#                                               ProhibitMutatingListFunctionsStricter,
+#                                                 which reports all of it, and
+#                                                 a sub that the block calls
+#   InputOutput::ProhibitBacktickOperators      logicLAB::ProhibitShellDispatch
+#   Modules::ProhibitEvilModules                PreferredModules
+#   Subroutines::ProhibitUnusedPrivateSubroutines  ProhibitUnusedDefinitions,
+#                                                 which counts calls from bin/
+#                                                 and lib/, private or not
+#   TestingAndDebugging::RequireUseWarnings     RequireFatalWarnings
+#   ValuesAndExpressions::ProhibitLeadingZeros  Plicease::ProhibitLeadingZeros
+#   Modules::RequireVersionVar                  [PkgVersion] in dist.ini
+#   ErrorHandling::RequireCarping               die with context, and
+#                                                 Carp::Always for the trace
+#
+# The five that the other profile leaves to the language are named at the top of
+# this one, because down here the language does not enforce them.
+#
+# Documentation::RequirePodSections is out as well: the sections it asks for are
+# the ones Pod::Weaver writes at build, and weaver.ini names them AUTHORS and
+# COPYRIGHT AND LICENSE where the policy wants AUTHOR and LICENSE AND COPYRIGHT.
 [BuiltinFunctions::ProhibitBooleanGrep]
 [BuiltinFunctions::ProhibitLvalueSubstr]
 [BuiltinFunctions::ProhibitReverseSortBlock]
@@ -176,10 +176,10 @@ allow = re
 [CodeLayout::ProhibitHardTabs]
 [CodeLayout::ProhibitTrailingWhitespace]
 [CodeLayout::RequireConsistentNewlines]
-; [CodeLayout::RequireTidyCode] is off on purpose.  git-hooks/pre-commit runs
-; perltidy over every staged Perl file before it runs this profile, so every
-; commit is tidy whatever this policy would say.  In an editor, the policy only
-; repeated that, and ran perltidy over the whole file on every check.
+# [CodeLayout::RequireTidyCode] is off on purpose.  git-hooks/pre-commit runs
+# perltidy over every staged Perl file before it runs this profile, so every
+# commit is tidy whatever this policy would say.  In an editor, the policy only
+# repeated that, and ran perltidy over the whole file on every check.
 [CodeLayout::RequireTrailingCommas]
 [ControlStructures::ProhibitLabelsWithSpecialBlockNames]
 [ControlStructures::ProhibitNegativeExpressionsInUnlessAndUntilConditions]
@@ -247,8 +247,8 @@ exclude_functions = print
 [ValuesAndExpressions::RequireUpperCaseHeredocTerminator]
 [Variables::ProhibitAugmentedAssignmentInDeclaration]
 [Variables::ProhibitConditionalDeclarations]
-; Variables::ProhibitEvilVariables is not listed: it declines to load until it
-; is given variables to prohibit, and nobody has named any.
+# Variables::ProhibitEvilVariables is not listed: it declines to load until it
+# is given variables to prohibit, and nobody has named any.
 [Variables::ProhibitLocalVars]
 [Variables::ProhibitMatchVars]
 [Variables::ProhibitPerl4PackageNames]
