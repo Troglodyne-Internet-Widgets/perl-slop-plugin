@@ -109,7 +109,11 @@ the boundary is closed or open.
 When testing a function's *outputs*, be very sure about the domain of acceptable output, and that acceptable input results in good output,
 while invalid input results in an error rather than acceptable-looking but invalid output.
 
-When a piece of code is removed, don't assert that its behavior isn't there - testing undefined behavior is a waste of time.
+When a change removes code, do not assert that its behavior is gone.
+A removed `print`, `warn` or branch is removed code, even when a reviewer phrased the request as a behavior ("a dry run should be silent").
+An assertion that something does not happen tests one item of an endless list, and covers no line.
+Before you write a test for a change, ask whether it adds behavior or takes it away.
+Test what the code still does: on a dry run, that the file is unchanged, and not that nothing was printed.
 
 Don't test the *form* of inputs but *behaviors* of the SUT consuming them.
 An input is any file that another program reads: a configuration, a template, a generated script.

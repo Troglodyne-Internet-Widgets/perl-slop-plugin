@@ -31,6 +31,13 @@ user runs F<scripts/setup-eval-sandbox>, which changes the AppArmor policy of
 the host.  Each run is capped by
 C<--max-cost-usd>.  The report is left local.
 
+A case that starts from existing code has a C<case.yaml> beside its
+F<prompt.md>, and its C<scaffold_script> copies the code into the workspace of
+the run.  F<prompt.md> takes no C<context> key, so the scaffold cannot be named
+there.  This passes C<--scaffold>, because without it a scaffold does not run,
+and the case grades an empty workspace.  Each scaffold is a script in this
+repository, so it is code that this repository already trusts.
+
 =head2 What the graders cannot check
 
 A grader reads what a run left: a file, the trace, a tool call.  It cannot run
@@ -256,7 +263,7 @@ foreach my $skill (@changed) {
         system(
             qw{claude plugin eval .}, '--case', "$skill-*",
             '--runs', $RUNS, '--ablation', 'none', '--threshold', $THRESHOLD,
-            '--max-cost-usd', $COST_CAP, '--trust-plugin', '--no-publish',
+            '--max-cost-usd', $COST_CAP, '--trust-plugin', '--no-publish', '--scaffold',
             '--json', $json, '--keep-temp', '--allow-tools', @TOOLS,
         );
         open( STDIN, '<&', $saved ) or die "restore STDIN: $!";
