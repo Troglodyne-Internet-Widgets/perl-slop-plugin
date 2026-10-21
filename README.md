@@ -47,6 +47,13 @@ apply to every project, Perl or not.
   that write, and `gh api` with a field or a write method.  It also covers MCP
   tools whose names say that they create, add, update, post, submit, reply to
   or merge one of those.
+- Before `gh pr create` for a repository that origin does not name,
+  `perl-slop:pull-requests`.  A `--head` of the form `owner:branch` is from a
+  fork, and a `--repo` is compared with origin.  With neither, gh chooses the
+  repository, and in a clone of a fork it chooses the parent.  So then the hook
+  asks `gh repo view` which repository gh chose, with a limit of 5 seconds.  If
+  git or gh does not answer, the gate applies, because it only asks for a
+  skill.
 - Before a Bash command that runs `kill`, `pkill`, `killall` or `pgrep`,
   `perl-slop:killing-processes`, for a process in any language.  This covers
   those commands after `sudo` or `xargs`, and in a command substitution.
@@ -56,7 +63,9 @@ apply to every project, Perl or not.
 - On every prompt until it is loaded, a reminder of
   `perl-slop:information-security`, because a reply to the user is prose too.
   When a prompt is about speed in a Perl project, a reminder of
-  `perl-slop:profiling-perl`.  Reminders do not refuse anything.
+  `perl-slop:profiling-perl`.  When a prompt says upstream, or names a pull
+  request to something other than master or main, a reminder of
+  `perl-slop:pull-requests`.  Reminders do not refuse anything.
 
 A `git commit`, `gh` or `glab` in the body of a heredoc is data, and does not
 count as a command.

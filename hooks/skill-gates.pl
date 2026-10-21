@@ -12,6 +12,7 @@ use File::Path     ();
 use File::Spec     ();
 use JSON::PP       ();    ## no critic (PreferredModules) -- core, so the hook runs on any perl; see $JSON_CLASS
 use List::Util     ();
+use POSIX          ();
 use Time::HiRes    ();
 use Time::Local    ();
 
@@ -47,11 +48,13 @@ stopping work.  C<PERL_SLOP_GATES=0> in the environment turns it off.
 
 # edit and commit are for Perl.  prose is for anything written in any
 # language, and for anything said to anyone.  signal is for any process.
+# upstream is for a pull request to a repository that origin does not name.
 our %BASE = (
-    edit   => ['perl-slop:reading-perl'],
-    commit => [ 'perl-slop:data-perl', 'perl-slop:testing-perl', 'perl-slop:reviewing-perl' ],
-    prose  => ['perl-slop:information-security'],
-    signal => ['perl-slop:killing-processes'],
+    edit     => ['perl-slop:reading-perl'],
+    commit   => [ 'perl-slop:data-perl', 'perl-slop:testing-perl', 'perl-slop:reviewing-perl' ],
+    prose    => ['perl-slop:information-security'],
+    signal   => ['perl-slop:killing-processes'],
+    upstream => ['perl-slop:pull-requests'],
 );
 
 our $CONFIG_NAME = '.perl-slop.json';
@@ -104,6 +107,22 @@ our $SIGNAL_RX = qr{
     (?:xargs\s+(?:-\S+\s+)*)?
     (?:kill|pkill|killall|pgrep)(?![\w-])
 }x;
+
+# The arguments of a gh pr create, up to the end of its command.
+our $PR_CREATE_RX = qr/${COMMAND_START_RX}gh\s+pr\s+create(?![\w-])([^;&|\n]*)/;
+
+# The commands that name the repository of origin, and the repository that gh
+# makes a pull request against when no --repo says.  Each runs in the directory
+# of the command, and prints one line.
+our @ORIGIN_COMMAND = qw{git config --get remote.origin.url};
+our @BASE_COMMAND   = qw{gh repo view --json nameWithOwner --jq .nameWithOwner};
+
+# How long to wait for one of them, in seconds.  Claude Code stops the whole
+# hook after 10.
+our $ASK_TIMEOUT = 5;
+
+# A prompt about a pull request to somebody else's project.
+our $UPSTREAM_RX = qr/\bupstream\b|\b(?:PR|pull\s+request)s?\s+(?:to|on|for)\s+(?!(?:master|main)\b)\w/i;
 
 our $SLOW_RX = qr/\b(?:slow(?:er|ly|ness)?|profil\w*|time[ds]?[ -]?out|timing out|performance|takes? (?:too )?long|faster)\b/i;
 
@@ -163,6 +182,10 @@ sub decide {
         }
         if ( is_signal($command) ) {
             my $out = signal_gate($input);
+            return $out if $out;
+        }
+        if ( is_upstream_pr( $command, $dir ) ) {
+            my $out = upstream_gate($input);
             return $out if $out;
         }
         return publish_gate($input) if is_publish($command);
@@ -290,6 +313,18 @@ sub signal_gate {
     return load_gate( $input, $BASE{signal}, 'a command that signals a process or picks processes by pattern', 'run it again' );
 }
 
+=head2 $output = upstream_gate(\%input)
+
+Refuses a pull request to an upstream repository until
+C<perl-slop:pull-requests> is loaded.
+
+=cut
+
+sub upstream_gate {
+    my ($input) = @_;
+    return load_gate( $input, $BASE{upstream}, 'a pull request to a repository that origin does not name', 'run it again' );
+}
+
 =head2 $output = load_gate(\%input, \@skills, $action, $retry)
 
 Refuses C<$action> until each of C<@skills> is loaded after the last
@@ -311,6 +346,8 @@ sub load_gate {
 
 Adds a reminder of C<perl-slop:information-security> to every prompt until
 it is loaded, because a reply to the user is prose too.  Adds a reminder of
+C<perl-slop:pull-requests> to a prompt that names upstream, or a pull request
+to something other than master or main, when that skill is not loaded.  Adds a reminder of
 C<perl-slop:profiling-perl> to a prompt about speed, in a Perl project, when
 that skill is not loaded.
 
@@ -323,6 +360,9 @@ sub prompt_reminder {
     my @context;
     if ( my @missing = grep { !defined is_loaded( $loaded, $_ ) } @{ $BASE{prose} } ) {
         push @context, "Load @{[ list(@missing) ]} before you reply, and before you write any code, comment, " . 'commit message, issue or pull request.';
+    }
+    if ( ( $input->{prompt} // q{} ) =~ $UPSTREAM_RX && !defined is_loaded( $loaded, 'perl-slop:pull-requests' ) ) {
+        push @context, 'This can be about a pull request to another project.  If it is, load ' . 'perl-slop:pull-requests before you search, change or write anything for it.';
     }
     if ( is_about_speed( $input->{prompt}, $input->{cwd} ) && !defined is_loaded( $loaded, 'perl-slop:profiling-perl' ) ) {
         push @context, 'This is about speed.  Load perl-slop:profiling-perl before concluding ' . 'anything, and measure before and after a change.';
@@ -667,6 +707,79 @@ with C<gh> or C<glab>.  Text in the body of a heredoc does not count.
 sub is_publish {
     my ($command) = @_;
     return without_heredocs($command) =~ $PUBLISH_RX;
+}
+
+=head2 $bool = is_upstream_pr($command, $dir)
+
+Whether a Bash command runs C<gh pr create> for a repository other than the
+one that origin names, in C<$dir>.
+
+A C<--head> of the form C<owner:branch> is from a fork, so it is upstream.  A
+C<--repo> is compared with origin.  With neither, gh chooses the repository,
+and in a clone of a fork it chooses the parent.  So then this asks gh which
+repository it would choose.  When origin or gh does not answer, the pull
+request counts as upstream, because the gate only asks for a skill.
+
+=cut
+
+sub is_upstream_pr {
+    my ( $command, $dir ) = @_;
+    my ($args) = without_heredocs($command) =~ $PR_CREATE_RX;
+    return if !defined $args;
+
+    return 1 if $args =~ m/(?:--head[=\s]|-H\s*)["']?[^\s"':]+:/;
+    my $origin = repo_of( output_in( $dir, @ORIGIN_COMMAND ) ) // return 1;
+    my ($named) = $args =~ m/(?:--repo[=\s]|-R\s*)["']?([^\s"']+)/;
+    my $base = repo_of( $named // output_in( $dir, @BASE_COMMAND ) ) // return 1;
+    return $base ne $origin;
+}
+
+=head2 $repo = repo_of($name)
+
+The C<owner/name> of a repository, in lower case, from a remote URL, a
+C<HOST/OWNER/REPO> or an C<OWNER/REPO>, or undef.
+
+=cut
+
+sub repo_of {
+    my ($name) = @_;
+    return if !defined $name;
+    my ($repo) = $name =~ m{([^/:\s]+/[^/:\s]+?)(?:[.]git)?/*\z};
+    return defined $repo ? lc $repo : undef;
+}
+
+=head2 $line = output_in($dir, @command)
+
+The first line that C<@command> prints when it runs in C<$dir>, or undef when
+it fails, prints nothing or takes longer than C<$ASK_TIMEOUT> seconds.  What
+it says on its standard error is thrown away.
+
+=cut
+
+sub output_in {
+    my ( $dir, @command ) = @_;
+
+    my $pid = open( my $fh, '-|' ) // return;
+    if ( !$pid ) {
+        open( STDERR, '>', File::Spec->devnull() ) or POSIX::_exit(127);
+        chdir($dir)                                 or POSIX::_exit(127);
+        exec {$command[0]} @command or POSIX::_exit(127);
+    }
+
+    my $line = eval {
+        local $SIG{ALRM} = sub { die "timeout\n" };
+        alarm $ASK_TIMEOUT;
+        my $first = <$fh>;
+        alarm 0;
+        $first;
+    };
+    if ( !defined $line && $@ ) {
+        kill 'TERM', $pid;
+    }
+    close($fh) or return;
+    return if !defined $line;
+    chomp $line;
+    return length $line ? $line : undef;
 }
 
 =head2 $bool = is_signal($command)

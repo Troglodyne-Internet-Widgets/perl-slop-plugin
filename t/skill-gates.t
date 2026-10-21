@@ -31,6 +31,11 @@ $ENV{CLAUDE_PLUGIN_DATA} = tempdir( CLEANUP => 1 );
 
 require_ok("$FindBin::Bin/../hooks/skill-gates.pl");
 
+# Every gh pr create here is for the repository of origin, unless a case says
+# otherwise, and nothing asks git or GitHub.
+@PerlSlop::SkillGates::ORIGIN_COMMAND = ( 'echo', 'git@github.com:o/r.git' );
+@PerlSlop::SkillGates::BASE_COMMAND   = ( 'echo', 'o/r' );
+
 my $JSON = JSON::PP->new->canonical;
 
 # --- Transcript lines ---------------------------------------------------------
@@ -262,6 +267,48 @@ subtest 'a post to an issue or a pull request waits for information-security' =>
     is( $mcp->( 'mcp__github__list_issue_comments',    $none ), undef, 'and so is one that lists comments' );
 };
 
+subtest 'a pull request to another repository waits for pull-requests' => sub {
+    my $prose = transcript( skill( 's1', $PROSE ) );
+    my $both  = transcript( skill( 's1', $PROSE ), skill( 's2', 'perl-slop:pull-requests' ) );
+
+    foreach my $command ( 'gh pr create -R up/r --title x', 'gh pr create --repo=Up/R --title x', 'gh pr create --repo https://github.com/up/r --title x', 'gh pr create --head me:fix --title x', "cd /x && gh pr create -H 'me:fix' --title x" ) {
+        like( run_bash( $command, $prose ), qr/pull-requests/, "refused: $command" );
+        is( run_bash( $command, $both ), undef, "allowed once it is loaded: $command" );
+    }
+    is( run_bash( 'gh pr create --repo O/R --title x',      $prose ), undef, 'a --repo that is origin, in any case, is allowed' );
+    is( run_bash( 'gh pr create --head fix --title x',      $prose ), undef, 'and so is a --head with no owner' );
+    is( run_bash( 'gh pr create --title x',                 $prose ), undef, 'and a pull request that gh makes against origin' );
+    is( run_bash( 'gh pr view -R up/r 3',                   $prose ), undef, 'gh pr that does not create is allowed' );
+    is( run_bash( "cat <<EOF\ngh pr create -R up/r\nEOF\n", $prose ), undef, 'and so is gh pr create in the body of a heredoc' );
+
+    {
+        local @PerlSlop::SkillGates::BASE_COMMAND = ( 'echo', 'up/r' );
+        like( run_bash( 'gh pr create --title x', $prose ), qr/pull-requests/, 'a pull request that gh makes against another repository is refused' );
+    }
+    {
+        local @PerlSlop::SkillGates::BASE_COMMAND = ('false');
+        like( run_bash( 'gh pr create --title x', $prose ), qr/pull-requests/, 'and so is one where gh does not say which' );
+    }
+    {
+        local @PerlSlop::SkillGates::ORIGIN_COMMAND = ('false');
+        like( run_bash( 'gh pr create --repo o/r --title x', $prose ), qr/pull-requests/, 'and one in a checkout with no origin' );
+    }
+    {
+        no warnings 'once';    ## no critic (ProhibitNoWarnings) -- the hook names it, and the test sets it once
+        local @PerlSlop::SkillGates::BASE_COMMAND = ( 'sleep', '10' );
+        local $PerlSlop::SkillGates::ASK_TIMEOUT  = 1;
+        my $start = time;
+        like( run_bash( 'gh pr create --title x', $prose ), qr/pull-requests/, 'and one where gh does not answer in time' );
+        cmp_ok( time - $start, '<', 5, 'which the hook does not wait for' );
+    }
+
+    my $root = repo();
+    git( $root, 'remote', 'add', 'origin', 'git@github.com:Me/Thing.git' );
+    local @PerlSlop::SkillGates::ORIGIN_COMMAND = qw{git config --get remote.origin.url};
+    is( run_bash( "cd $root && gh pr create --repo me/thing --title x", $prose ), undef, 'origin is read in the directory of the command' );
+    like( run_bash( "cd $root && gh pr create --repo o/r --title x", $prose ), qr/pull-requests/, 'and not in the directory of the hook' );
+};
+
 subtest 'a command that signals a process waits for killing-processes' => sub {
     my $none   = transcript();
     my $loaded = transcript( skill( 's1', 'perl-slop:killing-processes' ) );
@@ -343,6 +390,13 @@ subtest 'a prompt gets reminders of information-security, and of profiling-perl 
     ok( !$ask->( 'why is this so slow?', transcript( skill( 's0', $PROSE ), skill( 's1', 'perl-slop:profiling-perl' ) ) ), 'not when the skill is loaded' );
     my $both = $ask->( 'why is this so slow?', transcript() );
     like( $both, qr/information-security.*profiling-perl/s, 'and both at once when neither is loaded' );
+
+    foreach my $prompt ( 'is this fixed upstream?', 'ought we make a PR on lexicon?', 'send a pull request to their repo' ) {
+        like( $ask->( $prompt, $prose ), qr/pull-requests/, "pull-requests for: $prompt" );
+    }
+    ok( !$ask->( 'is this fixed upstream?', transcript( skill( 's0', $PROSE ), skill( 's1', 'perl-slop:pull-requests' ) ) ), 'not when the skill is loaded' );
+    ok( !$ask->( 'open each PR against master', $prose ), 'nor for a pull request in this repository' );
+    ok( !$ask->( 'make a PR to main',           $prose ), 'nor for one to the main branch' );
 };
 
 subtest 'the hook as Claude Code runs it' => sub {
