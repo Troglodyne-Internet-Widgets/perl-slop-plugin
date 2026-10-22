@@ -108,8 +108,16 @@ our $SIGNAL_RX = qr{
     (?:kill|pkill|killall|pgrep)(?![\w-])
 }x;
 
-# The arguments of a gh pr create, up to the end of its command.
-our $PR_CREATE_RX = qr/${COMMAND_START_RX}gh\s+pr\s+create(?![\w-])([^;&|\n]*)/;
+# The start of a gh pr create.  pr_create_args finds the end of its command.
+our $PR_CREATE_RX = qr/${COMMAND_START_RX}gh\s+pr\s+create(?![\w-])/;
+
+# A word of a command, in the order that pr_create_args tries them: an escape,
+# a command substitution, a bracket, a quote, the end of a command, a run of
+# anything else, or a single character that is none of them.
+our $SHELL_TOKEN_RX = qr/\G(\\.|\$\(|[()'"]|[;&|\n]|[^\\()'";&|\n\$]+|.)/s;
+
+# An --assignee among the arguments of gh pr create.
+our $ASSIGNEE_RX = qr/(?<!\S)(?:--assignee(?:[=\s]|\z)|-a)/;
 
 # The commands that name the repository of origin, and the repository that gh
 # makes a pull request against when no --repo says.  Each runs in the directory
@@ -188,7 +196,12 @@ sub decide {
             my $out = upstream_gate($input);
             return $out if $out;
         }
-        return publish_gate($input) if is_publish($command);
+        if ( is_publish($command) ) {
+            my $out = publish_gate($input);
+            return $out if $out;
+            return assignee_gate() if is_unassigned_pr($command);
+            return;
+        }
         my @files = written_perl_files( $command, $dir );
         return edit_gate( $input, [ map { [$_] } @files ] ) if @files;
     }
@@ -323,6 +336,18 @@ C<perl-slop:pull-requests> is loaded.
 sub upstream_gate {
     my ($input) = @_;
     return load_gate( $input, $BASE{upstream}, 'a pull request to a repository that origin does not name', 'run it again' );
+}
+
+=head2 $output = assignee_gate()
+
+Refuses a C<gh pr create> that assigns the pull request to nobody.  C<@me> is
+the account that gh runs as, so the pull request reaches the inbox of the user
+whose account opens it.
+
+=cut
+
+sub assignee_gate {
+    return deny( 'Pass --assignee @me to gh pr create, then run it again.  ' . '@me is the account that gh runs as, so the pull request reaches the inbox of the user.' );
 }
 
 =head2 $output = load_gate(\%input, \@skills, $action, $retry)
@@ -724,14 +749,59 @@ request counts as upstream, because the gate only asks for a skill.
 
 sub is_upstream_pr {
     my ( $command, $dir ) = @_;
-    my ($args) = without_heredocs($command) =~ $PR_CREATE_RX;
-    return if !defined $args;
+    my ($args) = pr_create_args($command) or return;
 
     return 1 if $args =~ m/(?:--head[=\s]|-H\s*)["']?[^\s"':]+:/;
     my $origin = repo_of( output_in( $dir, @ORIGIN_COMMAND ) ) // return 1;
     my ($named) = $args =~ m/(?:--repo[=\s]|-R\s*)["']?([^\s"']+)/;
     my $base = repo_of( $named // output_in( $dir, @BASE_COMMAND ) ) // return 1;
     return $base ne $origin;
+}
+
+=head2 $bool = is_unassigned_pr($command)
+
+Whether a Bash command runs C<gh pr create> with no C<--assignee> or C<-a>.  A
+flag inside a quoted word, such as a title, does not count.
+
+=cut
+
+sub is_unassigned_pr {
+    my ($command) = @_;
+    my ( undef, $bare ) = pr_create_args($command) or return;
+    return $bare !~ $ASSIGNEE_RX;
+}
+
+=head2 ($args, $bare) = pr_create_args($command)
+
+The arguments of the first C<gh pr create> in a Bash command, up to the end of
+its command, or the empty list when it runs none.  C<$bare> is the same
+arguments with each quoted word and each C<$(...)> taken out.  The body of a
+heredoc is taken out first.  A newline inside quotes or inside C<$(...)> does
+not end the command, so the arguments after a body that spans lines still
+count.
+
+=cut
+
+sub pr_create_args {
+    my ($command) = @_;
+    my $text = without_heredocs($command);
+    $text =~ m/$PR_CREATE_RX/g or return;
+
+    my ( $args, $bare, @open ) = ( q{}, q{} );
+    while ( $text =~ m/$SHELL_TOKEN_RX/gc ) {
+        my $token   = $1;
+        my $in      = $open[-1] // q{};
+        my $outside = !@open;
+        if    ( $in eq q{'} )                                        { pop @open if $token =~ m/'\z/ }
+        elsif ( $token eq q{"} )                                     { $in eq q{"} ? pop @open : push @open, q{"} }
+        elsif ( $token eq q{'} && $in ne q{"} )                      { push @open, q{'} }
+        elsif ( $token eq '$(' || ( $token eq '(' && $in ne q{"} ) ) { push @open, '(' }
+        elsif ( $token eq ')' && $in eq '(' )                        { pop @open }
+        elsif ( $outside && $token =~ m/\A[;&|\n]\z/ )               { last }
+        $args .= $token;
+        $bare .= $token if $outside && !@open;
+    }
+    return ( $args, $bare );
 }
 
 =head2 $repo = repo_of($name)

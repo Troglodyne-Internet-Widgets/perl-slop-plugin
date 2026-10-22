@@ -54,6 +54,11 @@ apply to every project, Perl or not.
   asks `gh repo view` which repository gh chose, with a limit of 5 seconds.  If
   git or gh does not answer, the gate applies, because it only asks for a
   skill.
+- A `gh pr create` with no `--assignee` is refused, whatever skills are
+  loaded.  The refusal asks for `--assignee @me`.  `@me` is the account that
+  gh runs as, so the pull request reaches the GitHub inbox of the user whose
+  account opens it.  A flag inside a quoted word, such as a title, does not
+  count.
 - Before a Bash command that runs `kill`, `pkill`, `killall` or `pgrep`,
   `perl-slop:killing-processes`, for a process in any language.  This covers
   those commands after `sudo` or `xargs`, and in a command substitution.
