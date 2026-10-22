@@ -255,7 +255,9 @@ spends some of it, so each one has to earn its place.
 
 ## Tests
 
-- Every behavior the patchset added or changed has a test.
+- Every behavior the patchset added or changed has a test.  A removal is not a
+  change for this purpose: see the passage on removed code in
+  [perl-slop:testing-perl](../testing-perl/testing-perl.md).
 - If you moved a sub between packages, its tests moved with it.
 - Coverage per file is no worse than it was before the patchset.
 - Consult the relevant testing skills available to you; see
