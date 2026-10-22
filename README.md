@@ -56,9 +56,12 @@ apply to every project, Perl or not.
   skill.
 - A `gh pr create` with no `--assignee` is refused, whatever skills are
   loaded.  The refusal asks for `--assignee @me`.  `@me` is the account that
-  gh runs as, so the pull request reaches the GitHub inbox of the user whose
-  account opens it.  A flag inside a quoted word, such as a title, does not
-  count.
+  gh runs as.  A flag inside a quoted word, such as a title, does not count.
+  GitHub tells nobody of what they did themselves, so a pull request that you
+  open and assign to yourself does not reach your inbox.  If the sessions of
+  Claude run gh as a bot, set `PERL_SLOP_ASSIGNEE` to your login in the `env`
+  of the settings of Claude Code.  Then the gate refuses a pull request that
+  is not assigned to that login, `@me` included.
 - Before a Bash command that runs `kill`, `pkill`, `killall` or `pgrep`,
   `perl-slop:killing-processes`, for a process in any language.  This covers
   those commands after `sudo` or `xargs`, and in a command substitution.

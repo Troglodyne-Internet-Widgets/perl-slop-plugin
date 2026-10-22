@@ -116,8 +116,8 @@ our $PR_CREATE_RX = qr/${COMMAND_START_RX}gh\s+pr\s+create(?![\w-])/;
 # anything else, or a single character that is none of them.
 our $SHELL_TOKEN_RX = qr/\G(\\.|\$\(|[()'"]|[;&|\n]|[^\\()'";&|\n\$]+|.)/s;
 
-# An --assignee among the arguments of gh pr create.
-our $ASSIGNEE_RX = qr/(?<!\S)(?:--assignee(?:[=\s]|\z)|-a)/;
+# An --assignee among the arguments of gh pr create, and the logins it names.
+our $ASSIGNEE_RX = qr/(?<!\S)(?:--assignee(?:=|\s+|\z)|-a\s*)(\S*)/;
 
 # The commands that name the repository of origin, and the repository that gh
 # makes a pull request against when no --repo says.  Each runs in the directory
@@ -340,14 +340,28 @@ sub upstream_gate {
 
 =head2 $output = assignee_gate()
 
-Refuses a C<gh pr create> that assigns the pull request to nobody.  C<@me> is
-the account that gh runs as, so the pull request reaches the inbox of the user
-whose account opens it.
+Refuses a C<gh pr create> that does not assign the pull request to the account
+that C<PERL_SLOP_ASSIGNEE> names, or to anybody when it names none.  Without it,
+the refusal asks for C<@me>, the account that gh runs as.  A session whose gh
+runs as a bot names the reviewer there, because GitHub tells nobody of what they
+did themselves.
 
 =cut
 
 sub assignee_gate {
+    my $wanted = wanted_assignee();
+    return deny( "Pass --assignee $wanted to gh pr create, then run it again.  " . 'PERL_SLOP_ASSIGNEE names the account that reviews these pull requests.' ) if length $wanted;
     return deny( 'Pass --assignee @me to gh pr create, then run it again.  ' . '@me is the account that gh runs as, so the pull request reaches the inbox of the user.' );
+}
+
+=head2 $login = wanted_assignee()
+
+The login that C<PERL_SLOP_ASSIGNEE> names, or the empty string.
+
+=cut
+
+sub wanted_assignee {
+    return $ENV{PERL_SLOP_ASSIGNEE} // q{};
 }
 
 =head2 $output = load_gate(\%input, \@skills, $action, $retry)
@@ -760,22 +774,30 @@ sub is_upstream_pr {
 
 =head2 $bool = is_unassigned_pr($command)
 
-Whether a Bash command runs C<gh pr create> with no C<--assignee> or C<-a>.  A
-flag inside a quoted word, such as a title, does not count.
+Whether a Bash command runs C<gh pr create> that assigns nobody, or, when
+C<PERL_SLOP_ASSIGNEE> names an account, that does not assign that one.  Logins
+compare in any case, as GitHub compares them.  A flag inside a quoted word, such
+as a title, does not count.
 
 =cut
 
 sub is_unassigned_pr {
     my ($command) = @_;
     my ( undef, $bare ) = pr_create_args($command) or return;
-    return $bare !~ $ASSIGNEE_RX;
+
+    my @assignees = map { split m/[,]/ } $bare =~ m/$ASSIGNEE_RX/g;
+    my $wanted    = wanted_assignee();
+    return !@assignees if !length $wanted;
+    return !List::Util::any { lc $_ eq lc $wanted } @assignees;
 }
 
 =head2 ($args, $bare) = pr_create_args($command)
 
 The arguments of the first C<gh pr create> in a Bash command, up to the end of
 its command, or the empty list when it runs none.  C<$bare> is the same
-arguments with each quoted word and each C<$(...)> taken out.  The body of a
+arguments with each C<$(...)> taken out, and each quoted word unquoted, with a
+NUL for each blank in it.  So a quoted word stays one word, and a flag inside
+one, such as in a title, does not start a word.  The body of a
 heredoc is taken out first.  A newline inside quotes or inside C<$(...)> does
 not end the command, so the arguments after a body that spans lines still
 count.
@@ -792,6 +814,7 @@ sub pr_create_args {
         my $token   = $1;
         my $in      = $open[-1] // q{};
         my $outside = !@open;
+        my $quoted  = @open == 1 && $in ne '(';
         if    ( $in eq q{'} )                                        { pop @open if $token =~ m/'\z/ }
         elsif ( $token eq q{"} )                                     { $in eq q{"} ? pop @open : push @open, q{"} }
         elsif ( $token eq q{'} && $in ne q{"} )                      { push @open, q{'} }
@@ -799,7 +822,8 @@ sub pr_create_args {
         elsif ( $token eq ')' && $in eq '(' )                        { pop @open }
         elsif ( $outside && $token =~ m/\A[;&|\n]\z/ )               { last }
         $args .= $token;
-        $bare .= $token if $outside && !@open;
+        if    ( $outside && !@open )            { $bare .= $token }
+        elsif ( $quoted && @open == 1 )         { $bare .= $token =~ s/\s/\0/gr }
     }
     return ( $args, $bare );
 }
