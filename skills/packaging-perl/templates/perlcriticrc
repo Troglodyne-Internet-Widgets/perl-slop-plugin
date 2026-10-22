@@ -115,6 +115,12 @@ allow = re
 #
 # [ProhibitUnusedDefinitions]
 # allow_subs =
+# A sub that only one subclass uses, and a sub that two subclasses define where
+# the class above them defines none.  It reads bin/ and lib/ through
+# Perl::Critic::Distribution, as ProhibitUnusedDefinitions does, so the two
+# share one parse.  A library whose subclasses live in other distributions
+# names in allow_subs each hook that only one of its own subclasses uses.
+[ProhibitMisplacedMethods]
 [ProhibitPrintSTDERR]
 [InputOutput::ProhibitRepeatedPrints]
 # Perl::Critic's own policies.  only = 1 loads nothing that is not named, so
