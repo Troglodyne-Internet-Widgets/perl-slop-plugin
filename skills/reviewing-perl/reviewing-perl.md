@@ -156,22 +156,6 @@ Run the house policies over the diff:
 Try to install them if perlcritic says it has no such policy.
 If the user needs to assist with this, flag them down.
 
-## What sub goes where?
-
-Oftentimes, you will have things like a class hierarchy, or a bunch of libraries
-that you are working with.  It is important that new subs you add end up in the proper
-place.  Libraries and classes have general themes, and are generally trying to be
-fit for a particular purpose / set of acceptance criteria.  Things that don't quite fit
-should probably be in another library/module/class.
-
-When working with objects/classes it is important to resist the tempation to put everything
-in the base class.  The only things that belong there are things which all the child classes
-actually need; if only one subclass uses it, it belongs in the subclass.
-
-In general altering the API of base classes & libraries with many callers will have downstream
-consequences and result in more bugs than the alternative.  This is why pluggable structures
-such as class inheritance, themes, plugins and the like are generally preferred.
-
 ## Comments and POD
 
 The reader's attention is the scarce resource. Every line of prose in the file
