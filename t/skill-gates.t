@@ -249,7 +249,7 @@ subtest 'a post to an issue or a pull request waits for information-security' =>
     my $none   = transcript();
     my $loaded = transcript( skill( 's1', $PROSE ) );
 
-    foreach my $command ( 'gh pr create --title x --body y', 'gh issue comment 12 --body y', 'cd /x && gh pr review 3 --comment -b y', 'gh api repos/o/r/issues/1/comments -f body=y', 'glab mr note 4 -m y' ) {
+    foreach my $command ( 'gh pr create --title x --body y -a @me', 'gh issue comment 12 --body y', 'cd /x && gh pr review 3 --comment -b y', 'gh api repos/o/r/issues/1/comments -f body=y', 'glab mr note 4 -m y' ) {
         like( run_bash( $command, $none ), qr/information-security/, "refused: $command" );
         is( run_bash( $command, $loaded ), undef, "allowed once it is loaded: $command" );
     }
@@ -271,13 +271,13 @@ subtest 'a pull request to another repository waits for pull-requests' => sub {
     my $prose = transcript( skill( 's1', $PROSE ) );
     my $both  = transcript( skill( 's1', $PROSE ), skill( 's2', 'perl-slop:pull-requests' ) );
 
-    foreach my $command ( 'gh pr create -R up/r --title x', 'gh pr create --repo=Up/R --title x', 'gh pr create --repo https://github.com/up/r --title x', 'gh pr create --head me:fix --title x', "cd /x && gh pr create -H 'me:fix' --title x" ) {
+    foreach my $command ( 'gh pr create -R up/r --title x -a @me', 'gh pr create --repo=Up/R --title x -a @me', 'gh pr create --repo https://github.com/up/r --title x -a @me', 'gh pr create --head me:fix --title x -a @me', "cd /x && gh pr create -H 'me:fix' --title x -a \@me" ) {
         like( run_bash( $command, $prose ), qr/pull-requests/, "refused: $command" );
         is( run_bash( $command, $both ), undef, "allowed once it is loaded: $command" );
     }
-    is( run_bash( 'gh pr create --repo O/R --title x',      $prose ), undef, 'a --repo that is origin, in any case, is allowed' );
-    is( run_bash( 'gh pr create --head fix --title x',      $prose ), undef, 'and so is a --head with no owner' );
-    is( run_bash( 'gh pr create --title x',                 $prose ), undef, 'and a pull request that gh makes against origin' );
+    is( run_bash( 'gh pr create --repo O/R --title x -a @me', $prose ), undef, 'a --repo that is origin, in any case, is allowed' );
+    is( run_bash( 'gh pr create --head fix --title x -a @me', $prose ), undef, 'and so is a --head with no owner' );
+    is( run_bash( 'gh pr create --title x -a @me',            $prose ), undef, 'and a pull request that gh makes against origin' );
     is( run_bash( 'gh pr view -R up/r 3',                   $prose ), undef, 'gh pr that does not create is allowed' );
     is( run_bash( "cat <<EOF\ngh pr create -R up/r\nEOF\n", $prose ), undef, 'and so is gh pr create in the body of a heredoc' );
 
@@ -305,8 +305,25 @@ subtest 'a pull request to another repository waits for pull-requests' => sub {
     my $root = repo();
     git( $root, 'remote', 'add', 'origin', 'git@github.com:Me/Thing.git' );
     local @PerlSlop::SkillGates::ORIGIN_COMMAND = qw{git config --get remote.origin.url};
-    is( run_bash( "cd $root && gh pr create --repo me/thing --title x", $prose ), undef, 'origin is read in the directory of the command' );
+    is( run_bash( "cd $root && gh pr create --repo me/thing --title x -a \@me", $prose ), undef, 'origin is read in the directory of the command' );
     like( run_bash( "cd $root && gh pr create --repo o/r --title x", $prose ), qr/pull-requests/, 'and not in the directory of the hook' );
+};
+
+subtest 'a pull request is assigned to the account that opens it' => sub {
+    my $prose = transcript( skill( 's1', $PROSE ) );
+
+    foreach my $command ( 'gh pr create --title x', 'gh pr create --title "x -a y"', 'gh pr create --title x && echo --assignee @me', "gh pr create --body \"\$(cat <<'EOF'\n-a \@me\nEOF\n)\"" ) {
+        like( run_bash( $command, $prose ), qr/--assignee \@me/, "refused: $command" );
+    }
+    foreach my $command ( 'gh pr create --assignee @me --title x', 'gh pr create --assignee=@me', 'gh pr create -a @me', 'gh pr create -a@me', 'gh pr create --title "a; b" -a @me', "gh pr create --body \"\$(cat <<'EOF'\nwords\nEOF\n)\" --assignee \@me" ) {
+        is( run_bash( $command, $prose ), undef, "allowed: $command" );
+    }
+    is( run_bash( 'gh pr edit 3 --title x',          $prose ), undef, 'gh pr that does not create is allowed' );
+    is( run_bash( "cat <<EOF\ngh pr create\nEOF\n", $prose ), undef, 'and so is gh pr create in the body of a heredoc' );
+
+    # The arguments after a body that spans lines are still the arguments of
+    # the same command, for the upstream gate as for this one.
+    like( run_bash( "gh pr create --body \"\$(cat <<'EOF'\nwords\nEOF\n)\" --repo up/r -a \@me", $prose ), qr/pull-requests/, 'a --repo after a body that spans lines still names the repository' );
 };
 
 subtest 'a command that signals a process waits for killing-processes' => sub {

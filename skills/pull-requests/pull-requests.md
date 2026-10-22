@@ -106,7 +106,7 @@ A pull request is public, and it is posted under the account of the user.  So:
    you ran, and what it printed.  Follow `perl-slop:information-security`: the
    description names no host, account or customer of the user.
 3. Give the user the command, with `--repo`, `--head OWNER:BRANCH`, `--base`,
-   `--title` and `--body-file`.  Do not run it yourself.
+   `--title`, `--body-file` and `--assignee @me`.  Do not run it yourself.
 
 Your project can carry the same fix as a patch until the release.  If it does,
 add the link to the pull request to the header of the patch.
