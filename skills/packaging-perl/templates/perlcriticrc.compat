@@ -95,6 +95,9 @@ formats = #!/usr/bin/env perl
 # What ProhibitMutatingListFunctions reports, which this replaces, and a block
 # that changes $_ through a sub that it calls.
 [ControlStructures::ProhibitMutatingListFunctionsStricter]
+# An if, elsif, else or unless whose block holds no statement, a comment
+# being none.  Loops are left alone, because a loop condition can do the work.
+[ControlStructures::ProhibitEmptyConditionalBlocks]
 # A sub that returns the result of a syscall or an eval, called where nothing
 # looks at the result.  The same functions as RequireCheckedSyscalls below.
 [ErrorHandling::RequireCheckedIndirectResults]
