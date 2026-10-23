@@ -29,6 +29,9 @@ use FindBin;
 # Where the hook records loads, fresh for this run.
 $ENV{CLAUDE_PLUGIN_DATA} = tempdir( CLEANUP => 1 );
 
+# The account to assign a pull request to, which a case sets when it wants one.
+delete $ENV{PERL_SLOP_ASSIGNEE};
+
 require_ok("$FindBin::Bin/../hooks/skill-gates.pl");
 
 # Every gh pr create here is for the repository of origin, unless a case says
@@ -324,6 +327,18 @@ subtest 'a pull request is assigned to the account that opens it' => sub {
     # The arguments after a body that spans lines are still the arguments of
     # the same command, for the upstream gate as for this one.
     like( run_bash( "gh pr create --body \"\$(cat <<'EOF'\nwords\nEOF\n)\" --repo up/r -a \@me", $prose ), qr/pull-requests/, 'a --repo after a body that spans lines still names the repository' );
+};
+
+subtest 'a pull request is assigned to the account that PERL_SLOP_ASSIGNEE names' => sub {
+    my $prose = transcript( skill( 's1', $PROSE ) );
+    local $ENV{PERL_SLOP_ASSIGNEE} = 'reviewer';
+
+    foreach my $command ( 'gh pr create --title x', 'gh pr create -a @me', 'gh pr create --assignee someone-else', 'gh pr create --title "reviewer"', 'gh pr create --title "x -a reviewer"' ) {
+        like( run_bash( $command, $prose ), qr/--assignee[ ]reviewer/, "refused: $command" );
+    }
+    foreach my $command ( 'gh pr create --assignee reviewer', 'gh pr create -a Reviewer', 'gh pr create -areviewer', 'gh pr create --assignee=someone-else,reviewer', 'gh pr create --assignee "reviewer" --title "a b"', "gh pr create -a 'reviewer'" ) {
+        is( run_bash( $command, $prose ), undef, "allowed: $command" );
+    }
 };
 
 subtest 'a command that signals a process waits for killing-processes' => sub {
