@@ -68,12 +68,24 @@ apply to every project, Perl or not.
   `pkill -f` and `pgrep -f` match the whole command line, and the shell that
   runs the command has the pattern in its own command line.  So the pattern
   matches that shell, and a session once ended itself that way.
+- Before a Bash command that runs `perl -d`, or sets `PERLDB_OPTS`,
+  `perl-slop:debugging-perl`.  `perl -d:NYTProf` loads a profiler, so it does
+  not count.  The same gate covers an edit that adds `$DB::single`.  A run of
+  the debugger with no terminal has pitfalls, and the skill lists them.
 - On every prompt until it is loaded, a reminder of
   `perl-slop:information-security`, because a reply to the user is prose too.
   When a prompt is about speed in a Perl project, a reminder of
   `perl-slop:profiling-perl`.  When a prompt says upstream, or names a pull
   request to something other than master or main, a reminder of
-  `perl-slop:pull-requests`.  Reminders do not refuse anything.
+  `perl-slop:pull-requests`.  When a prompt in a Perl project names the
+  debugger, or says that a program did what it cannot do, a reminder of
+  `perl-slop:debugging-perl`.  Reminders do not refuse anything.
+- After the tenth read of a turn with no edit, in a Perl project, a reminder
+  of `perl-slop:debugging-perl`, once for each prompt.  A read is a Read,
+  Grep or Glob call, or a Bash command such as `grep`, `sed -n` or `git log`.
+  In one session, a check that must refuse a domain let it through.  Ten
+  searches of the code did not show how, and one watch expression in the
+  debugger did.
 
 A `git commit`, `gh` or `glab` in the body of a heredoc is data, and does not
 count as a command.

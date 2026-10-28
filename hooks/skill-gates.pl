@@ -29,7 +29,8 @@ decision as JSON, or nothing to allow.  F<README.md> says what each gate asks fo
 
 It also runs for PostToolUse on the Skill tool, to record the load, and for
 SessionStart after a compaction, to forget the loads before it.  See
-L</record_load(\%input)>.
+L</record_load(\%input)>.  It runs for PostToolUse on Bash, Read, Grep and Glob
+to count the reads of a turn.  See C<read_nudge>.
 
 A skill counts as loaded when the transcript shows a Skill call for it, or
 the text of the skill that a user's C</name> loads, or when this hook recorded
@@ -49,12 +50,14 @@ stopping work.  C<PERL_SLOP_GATES=0> in the environment turns it off.
 # edit and commit are for Perl.  prose is for anything written in any
 # language, and for anything said to anyone.  signal is for any process.
 # upstream is for a pull request to a repository that origin does not name.
+# debug is for a run of the perl debugger.
 our %BASE = (
     edit     => ['perl-slop:reading-perl'],
     commit   => [ 'perl-slop:data-perl', 'perl-slop:testing-perl', 'perl-slop:reviewing-perl' ],
     prose    => ['perl-slop:information-security'],
     signal   => ['perl-slop:killing-processes'],
     upstream => ['perl-slop:pull-requests'],
+    debug    => ['perl-slop:debugging-perl'],
 );
 
 our $CONFIG_NAME = '.perl-slop.json';
@@ -66,10 +69,12 @@ our $JSON_CLASS = ( eval { require Cpanel::JSON::XS; 1 } ? 'Cpanel::JSON::XS' : 
 our $PERL_EXT_RX = qr/[.](?:pm|pl|t|psgi)\z/;
 
 # A Bash command that writes a file.  perltidy is left out, because it changes
-# layout and not what the code does.
+# layout and not what the code does.  The -i of perl can follow other switches
+# in one word, as in -pi, but not a switch whose argument is the rest of the
+# word, as the -I of -Ilib is.
 our $WRITES_RX = qr{
     \bsed\s+(?:-\w*\s+)*-\w*i
-  | \bperl\s+(?:-\w+\s+)*-\w*i
+  | \bperl\s+(?:-\w+\s+)*-(?![IMmdDexXCV])\w*i
   | \bpython3?\b
   | \btee\b | \bcp\b | \bmv\b | \binstall\b | \bpatch\b
   | >>?
@@ -107,6 +112,38 @@ our $SIGNAL_RX = qr{
     (?:xargs\s+(?:-\S+\s+)*)?
     (?:kill|pkill|killall|pgrep)(?![\w-])
 }x;
+
+# A Bash command that runs the perl debugger.  -d:Module loads a module such as
+# Devel::NYTProf in place of the debugger, so it is left out.  A switch that
+# takes no argument can come before the d in one word, as in -wd, and -de 0
+# starts the debugger on an expression.
+our $DEBUGGER_RX = qr{
+    $COMMAND_START_RX
+    (?:\w+=\S*\s+)*
+    (?:(?:sudo|setsid|timeout\s+\S+|env)\s+)*
+    (?:\S*/)?perl[\d.]*\s+ (?:[^\s;&|]+\s+)*? -[wWXcnpastTUl]*d[eE]?(?=\s|\z)
+  | \bPERLDB_OPTS=
+}x;
+
+# A turn that reads this many times with no edit, in a Perl project, gets a
+# reminder of debugging-perl.  Each Read, Grep and Glob is one read, and so is
+# a Bash command that only shows files or history.
+our $READS_BEFORE_NUDGE = 10;
+our $READ_COMMAND_RX    = qr{
+    \A\s* (?:cd\s+\S+\s*&&\s*)?
+    (?: grep | rg | ag | cat | head | tail | ls | find | perldoc | sed\s+-n
+      | git\s+(?:-C\s+\S+\s+)?(?:grep|log|show|blame|diff|status) )(?![\w-])
+}x;
+
+# A prompt that says that a program did what its code says it cannot do, or
+# that names the debugger.
+our $STUCK_RX = qr{
+    \bdebugger\b | \bperl\s+-d\b | \$DB::single\b | \bstumped\b
+  | \bshould(?:n't|\s+not)?\s+have\s+(?:refused|died|failed|stopped|caught|rejected)\b
+  | \bhow\s+(?:did|does|could|can)\s+(?:it|that|this)\b[^.?!]{0,40}?\b(?:get\s+(?:past|through)|slip|pass(?:es|ed)?)\b
+  | \bbug\s+is\s+real\b
+  | \bit\s+did\s+(?:indeed|in\s+fact|actually)\b
+}xi;
 
 # The start of a gh pr create.  pr_create_args finds the end of its command.
 our $PR_CREATE_RX = qr/${COMMAND_START_RX}gh\s+pr\s+create(?![\w-])/;
@@ -170,6 +207,7 @@ sub decide {
     my $event = $input->{hook_event_name} // q{};
     return prompt_reminder($input) if $event eq 'UserPromptSubmit';
     return record_load($input)     if $event eq 'PostToolUse' && ( $input->{tool_name} // q{} ) eq 'Skill';
+    return read_nudge($input)      if $event eq 'PostToolUse';
     return forget_loads($input)    if $event eq 'SessionStart';
     return                         if $event ne 'PreToolUse';
 
@@ -178,6 +216,10 @@ sub decide {
 
     if ( List::Util::any { $tool eq $_ } qw{Edit Write MultiEdit NotebookEdit} ) {
         my $file = $args->{file_path} // $args->{notebook_path} // return;
+        if ( adds_breakpoint($args) ) {
+            my $out = debug_gate($input);
+            return $out if $out;
+        }
         return edit_gate( $input, [ [ $file, $args->{content} ] ] );
     }
 
@@ -190,6 +232,10 @@ sub decide {
         }
         if ( is_signal($command) ) {
             my $out = signal_gate($input);
+            return $out if $out;
+        }
+        if ( is_debugger($command) ) {
+            my $out = debug_gate($input);
             return $out if $out;
         }
         if ( is_upstream_pr( $command, $dir ) ) {
@@ -326,6 +372,160 @@ sub signal_gate {
     return load_gate( $input, $BASE{signal}, 'a command that signals a process or picks processes by pattern', 'run it again' );
 }
 
+=head2 $output = debug_gate(\%input)
+
+Refuses a command that runs the perl debugger, or an edit that adds
+C<$DB::single>, until C<perl-slop:debugging-perl> is loaded.
+
+=cut
+
+sub debug_gate {
+    my ($input) = @_;
+    return load_gate( $input, $BASE{debug}, 'a run of the perl debugger, or a breakpoint in the code', 'try it again' );
+}
+
+=head2 $bool = is_debugger($command)
+
+Whether the Bash C<$command> runs the perl debugger, or sets C<PERLDB_OPTS>.
+C<-d:Module> loads a module in place of the debugger, so it does not count.
+
+=cut
+
+sub is_debugger {
+    my ($command) = @_;
+    return without_heredocs($command) =~ $DEBUGGER_RX;
+}
+
+=head2 $bool = adds_breakpoint(\%tool_input)
+
+Whether the input of an Edit, Write or MultiEdit puts C<$DB::single> into a
+file.
+
+=cut
+
+sub adds_breakpoint {
+    my ($args) = @_;
+    my @edits = ref $args->{edits} eq 'ARRAY' ? grep { ref eq 'HASH' } @{ $args->{edits} } : ();
+    my @text  = grep { defined } $args->{content}, $args->{new_string}, $args->{new_source}, map { $_->{new_string} } @edits;
+    return List::Util::any { m/\$DB::single\b/ } @text;
+}
+
+=head2 $output = read_nudge(\%input)
+
+The PostToolUse output that reminds the model of C<perl-slop:debugging-perl>
+once for a prompt, after the turn read C<$READS_BEFORE_NUDGE> times with no
+edit, in a Perl project.  A model that reads on and on without an edit is
+usually stuck on what the program did.  Undef otherwise, or when the skill is
+loaded.
+
+The transcript is written late, so the count can lag by a call or two.  So it
+fires at the first call that sees enough reads, and a file in
+C<CLAUDE_PLUGIN_DATA> records the prompt that it fired for.
+
+=cut
+
+sub read_nudge {
+    my ($input) = @_;
+
+    return if ( $input->{tool_name} // q{} ) !~ m/\A(?:Bash|Read|Grep|Glob)\z/;
+    my $root = checkout_root( $input->{cwd} // q{.} ) // return;
+    return if !looks_like_perl_project($root);
+
+    my ( $reads, $prompt_at ) = reads_this_turn( $input->{transcript_path} );
+    return if $reads < $READS_BEFORE_NUDGE;
+
+    my $file = nudge_file( $input->{session_id} ) // return;
+    return if ( read_first_line($file) // q{} ) eq $prompt_at;
+
+    my $loaded = session( $input->{transcript_path}, $input->{session_id} )->{loaded};
+    return if defined is_loaded( $loaded, $BASE{debug}[0] );
+
+    File::Path::make_path( File::Basename::dirname($file) );
+    open( my $fh, '>', $file ) or return;
+    print {$fh} "$prompt_at\n";
+    close($fh);
+
+    return {
+        hookSpecificOutput => {
+            hookEventName     => 'PostToolUse',
+            additionalContext => "This turn read the code $reads times with no edit.  If the program did something that the code seems not to allow, "
+              . 'stop reading and load perl-slop:debugging-perl, then run the program to that branch under perl -d.',
+        },
+    };
+}
+
+=head2 ($reads, $prompt_at) = reads_this_turn($transcript_path)
+
+The number of reads since the last prompt of the user, after the last
+compaction, and the timestamp of that prompt as the transcript writes it.  An
+Edit, Write, MultiEdit or NotebookEdit sets the count back to 0.
+
+=cut
+
+sub reads_this_turn {
+    my ($path) = @_;
+
+    return ( 0, q{} ) if !defined $path;
+    open( my $fh, '<', $path ) or return ( 0, q{} );
+    seek_past_compaction($fh);
+
+    my $json = $JSON_CLASS->new;
+    my ( $reads, $prompt_at ) = ( 0, q{} );
+    while ( my $line = <$fh> ) {
+        my $tool_use = index( $line, '"tool_use"' ) >= 0;
+        my $prompt   = !$tool_use && index( $line, '"type":"user"' ) >= 0 && index( $line, '"tool_result"' ) < 0;
+        next if !$tool_use && !$prompt;
+
+        my $entry = eval { $json->decode($line) } or next;
+        if ($prompt) {
+            ( $reads, $prompt_at ) = ( 0, $entry->{timestamp} // q{} );
+            next;
+        }
+        my $content = ref $entry->{message} eq 'HASH' ? $entry->{message}{content} : undef;
+        foreach my $block ( grep { ref eq 'HASH' && ( $_->{type} // q{} ) eq 'tool_use' } @{ ref $content eq 'ARRAY' ? $content : [] } ) {
+            my $name = $block->{name} // q{};
+            if ( $name =~ m/\A(?:Edit|Write|MultiEdit|NotebookEdit)\z/ ) {
+                $reads = 0;
+            }
+            elsif ( $name =~ m/\A(?:Read|Grep|Glob)\z/ || ( $name eq 'Bash' && ( $block->{input}{command} // q{} ) =~ $READ_COMMAND_RX ) ) {
+                $reads++;
+            }
+        }
+    }
+    close($fh);
+    return ( $reads, $prompt_at );
+}
+
+=head2 $path = nudge_file($session_id)
+
+The file in which C<read_nudge> records the prompt that it last fired for, or
+undef for a session id that cannot be a file name.
+
+=cut
+
+sub nudge_file {
+    my ($session_id) = @_;
+    my $loads = loads_file($session_id) // return;
+    ( my $file = $loads ) =~ s/loads-([\w-]+)[.]jsonl\z/nudge-$1.txt/;
+    return $file;
+}
+
+=head2 $line = read_first_line($path)
+
+The first line of the file at C<$path>, without its newline, or undef when
+there is no such file.
+
+=cut
+
+sub read_first_line {
+    my ($path) = @_;
+    open( my $fh, '<', $path ) or return;
+    my $line = <$fh>;
+    close($fh);
+    chomp $line if defined $line;
+    return $line;
+}
+
 =head2 $output = upstream_gate(\%input)
 
 Refuses a pull request to an upstream repository until
@@ -388,7 +588,9 @@ it is loaded, because a reply to the user is prose too.  Adds a reminder of
 C<perl-slop:pull-requests> to a prompt that names upstream, or a pull request
 to something other than master or main, when that skill is not loaded.  Adds a reminder of
 C<perl-slop:profiling-perl> to a prompt about speed, in a Perl project, when
-that skill is not loaded.
+that skill is not loaded.  Adds a reminder of C<perl-slop:debugging-perl> to a
+prompt that names the debugger, or says that a program did what it cannot do,
+in a Perl project, when that skill is not loaded.
 
 =cut
 
@@ -405,6 +607,9 @@ sub prompt_reminder {
     }
     if ( is_about_speed( $input->{prompt}, $input->{cwd} ) && !defined is_loaded( $loaded, 'perl-slop:profiling-perl' ) ) {
         push @context, 'This is about speed.  Load perl-slop:profiling-perl before concluding ' . 'anything, and measure before and after a change.';
+    }
+    if ( is_about_stuck( $input->{prompt}, $input->{cwd} ) && !defined is_loaded( $loaded, 'perl-slop:debugging-perl' ) ) {
+        push @context, 'This can be about a program that did what its code seems not to allow.  If it is, load ' . 'perl-slop:debugging-perl, and run the program to that branch under perl -d rather than read on.';
     }
     return if !@context;
 
@@ -425,6 +630,20 @@ Whether C<$prompt> is about speed, and C<$cwd> is in a Perl project.
 sub is_about_speed {
     my ( $prompt, $cwd ) = @_;
     return if ( $prompt // q{} ) !~ $SLOW_RX;
+    my $root = checkout_root( $cwd // q{.} ) // return;
+    return looks_like_perl_project($root);
+}
+
+=head2 $bool = is_about_stuck($prompt, $cwd)
+
+Whether C<$prompt> names the debugger, or says that a program did what its
+code says it cannot do, and C<$cwd> is in a Perl project.
+
+=cut
+
+sub is_about_stuck {
+    my ( $prompt, $cwd ) = @_;
+    return if ( $prompt // q{} ) !~ $STUCK_RX;
     my $root = checkout_root( $cwd // q{.} ) // return;
     return looks_like_perl_project($root);
 }

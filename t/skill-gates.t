@@ -158,7 +158,11 @@ subtest 'a Bash command that writes Perl waits for reading-perl too' => sub {
     like( run_bash( "sed -i s/a/b/ $root/lib/Foo.pm",                     $none ), qr/reading-perl/, 'sed -i' );
     like( run_bash( "cd $root && python3 - <<'EOF'\np='lib/Foo.pm'\nEOF", $none ), qr/reading-perl/, 'a python edit, resolved against its cd' );
     like( run_bash( "cat > $root/t/new.t <<'EOF'\nEOF",                   $none ), qr/reading-perl/, 'a redirect into a new file' );
+    like( run_bash( "perl -pi -e s/a/b/ $root/lib/Foo.pm", $none ), qr/reading-perl/, 'perl -pi' );
+    like( run_bash( "perl -0777 -pi.bak -e 1 $root/lib/Foo.pm", $none ), qr/reading-perl/, 'perl -pi.bak after another switch' );
     is( run_bash( "perl -c $root/lib/Foo.pm",     $none ), undef, 'perl -c only reads' );
+    is( run_bash( "perl -Ilib $root/lib/Foo.pm",  $none ), undef, 'and so does perl -Ilib, whose i is in the argument of -I' );
+    is( run_bash( "perl -Mlib=x $root/lib/Foo.pm", $none ), undef, 'and perl -Mlib, whose i is in the argument of -M' );
     is( run_bash( "cd $root && prove -l t/",      $none ), undef, 'and so does prove' );
     is( run_bash( "perltidy -b $root/lib/Foo.pm", $none ), undef, 'perltidy changes layout, and is left alone' );
 };
@@ -356,6 +360,62 @@ subtest 'a command that signals a process waits for killing-processes' => sub {
     like( run_bash( 'gh pr create --title x --body y && kill 1', transcript( skill( 's1', $PROSE ) ) ), qr/killing-processes/, 'a post that also kills waits for both' );
 };
 
+subtest 'a run of the perl debugger, or a breakpoint in the code, waits for debugging-perl' => sub {
+    my $none   = transcript();
+    my $loaded = transcript( skill( 's1', 'perl-slop:debugging-perl' ) );
+
+    foreach my $command ( 'perl -d bin/x --dryrun a.test', 'perl -Ilib -d t/x.t', 'perl -wd bin/x', 'perl -de 0', "printf 'c\\n' | timeout 60 perl -d bin/x", 'setsid perl -d bin/x', '/opt/perl5/bin/perl5.44.0 -d bin/x', "PERLDB_OPTS='NonStop=1' perl bin/x", 'cd /bogus && perl -d x.pl' ) {
+        like( run_bash( $command, $none ), qr/debugging-perl/, "refused: $command" );
+        is( run_bash( $command, $loaded ), undef, "allowed once it is loaded: $command" );
+    }
+    is( run_bash( 'perl -d:NYTProf bin/x',       $none ), undef, 'a profiler is not the debugger' );
+    is( run_bash( 'perl -Mdata -e 1',            $none ), undef, 'nor a d inside the argument of another switch' );
+    is( run_bash( 'perltidy -d x.pl',            $none ), undef, 'nor a program whose name starts with perl' );
+    is( run_bash( "cat <<EOF\nperl -d x\nEOF\n", $none ), undef, 'nor the debugger in the body of a heredoc' );
+    is( run_bash( 'perldoc perldebug',           $none ), undef, 'and reading about it is allowed' );
+
+    my $reading = transcript( map { skill( "s$_", $READING[$_] ) } 0 .. $#READING );
+    my $add     = sub {
+        my ( $t, %input ) = @_;
+        return refused( tool_name => 'Edit', tool_input => { file_path => '/bogus/x.pm', old_string => 'a', new_string => "\$DB::single = 1;\na", %input }, transcript_path => $t );
+    };
+    like( $add->($reading), qr/debugging-perl/, 'an edit that adds $DB::single is refused' );
+    is( $add->( transcript( map { skill( "s$_", $_ ) } @READING, 'perl-slop:debugging-perl' ) ), undef, 'and allowed once it is loaded' );
+    is( $add->( $reading, new_string => 'b' ), undef, 'an edit without it is not refused' );
+    like(
+        refused( tool_name => 'MultiEdit', tool_input => { file_path => '/bogus/x.pm', edits => [ { old_string => 'a', new_string => 'b' }, { old_string => 'c', new_string => '$DB::single=1' } ] }, transcript_path => $reading ) // q{},
+        qr/debugging-perl/, 'and so is one edit of several that adds it'
+    );
+};
+
+subtest 'a turn that reads on and on with no edit gets a reminder of debugging-perl, once' => sub {
+    my $root  = repo( 'dist.ini' => "name = X\n" );
+    my @reads = map { bash( "b$_", 'grep -n x lib/X.pm' ) } 1 .. 9;
+    my $post  = sub {
+        my ( $t, %more ) = @_;
+        my $out = PerlSlop::SkillGates::decide( { hook_event_name => 'PostToolUse', tool_name => 'Bash', tool_input => { command => 'grep x' }, cwd => $root, transcript_path => $t, session_id => 'nudge-a', %more } );
+        return $out && $out->{hookSpecificOutput}{additionalContext};
+    };
+
+    ok( !$post->( transcript( said('why?'), @reads ) ), 'nine reads are not enough' );
+    my $ten = transcript( said('why?'), @reads, tool_use( 'r10', 'Read', { file_path => '/bogus/x.pm' } ) );
+    like( $post->($ten), qr/read[ ]the[ ]code[ ]10[ ]times.*debugging-perl/, 'ten are' );
+    ok( !$post->($ten), 'and it says so once for a prompt' );
+
+    my %b = ( session_id => 'nudge-b' );
+    ok( !$post->( transcript( said('why?'), @reads, tool_use( 'e1', 'Edit', { file_path => '/bogus/x.pm' } ), bash( 'b10', 'cat lib/X.pm' ) ), %b ), 'an edit starts the count again' );
+    ok( !$post->( transcript( said('why?'), map { bash( "m$_", 'make test' ) } 1 .. 12 ), %b ), 'a command that is not a read does not count' );
+    ok( !$post->( transcript( said('why?'), @reads, @reads ), %b, tool_name => 'Edit' ), 'nothing is said after a tool that is not a read' );
+    ok( !$post->( transcript( skill( 's1', 'perl-slop:debugging-perl' ), said('why?'), @reads, @reads ), %b ), 'nor when the skill is loaded' );
+
+    my $other = tempdir( CLEANUP => 1 );
+    git( $other, 'init', '-q' );
+    ok( !$post->( transcript( said('why?'), @reads, @reads ), %b, cwd => $other ), 'nor outside a Perl project' );
+
+    ok( !$post->( transcript( said('first'), @reads, @reads, said('second'), @reads ), session_id => 'nudge-c' ), 'the count is of the reads since the last prompt' );
+    like( $post->( transcript( said('first'), @reads, said('second'), @reads, @reads ), session_id => 'nudge-c' ), qr/debugging-perl/, 'and a new prompt can be reminded again' );
+};
+
 subtest 'a repository can ask for more skills in .perl-slop.json' => sub {
     my $config = $JSON->encode(
         {
@@ -428,6 +488,12 @@ subtest 'a prompt gets reminders of information-security, and of profiling-perl 
     }
     ok( !$ask->( 'is this fixed upstream?', transcript( skill( 's0', $PROSE ), skill( 's1', 'perl-slop:pull-requests' ) ) ), 'not when the skill is loaded' );
     ok( !$ask->( 'open each PR against master', $prose ), 'nor for a pull request in this repository' );
+
+    foreach my $prompt ( 'Run it thru the perl debugger', 'It did indeed build it, the bug is real', 'that should have refused the domain', 'how did it get past the check?', "I'm stumped" ) {
+        like( $ask->( $prompt, $prose ), qr/debugging-perl/, "debugging-perl for: $prompt" );
+    }
+    ok( !$ask->( 'Run it thru the perl debugger', transcript( skill( 's0', $PROSE ), skill( 's1', 'perl-slop:debugging-perl' ) ) ), 'not when the skill is loaded' );
+    ok( !$ask->( 'rename the sub that builds it', $prose ), 'nor for a prompt about something else' );
     ok( !$ask->( 'make a PR to main',           $prose ), 'nor for one to the main branch' );
 };
 
