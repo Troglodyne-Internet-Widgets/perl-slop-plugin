@@ -83,9 +83,8 @@ apply to every project, Perl or not.
 - After the tenth read of a turn with no edit, in a Perl project, a reminder
   of `perl-slop:debugging-perl`, once for each prompt.  A read is a Read,
   Grep or Glob call, or a Bash command such as `grep`, `sed -n` or `git log`.
-  In one session, a check that must refuse a domain let it through.  Ten
-  searches of the code did not show how, and one watch expression in the
-  debugger did.
+  A model that reads on and on with no edit is usually stuck on what a
+  program did.  The debugger answers that, and more reading does not.
 
 A `git commit`, `gh` or `glab` in the body of a heredoc is data, and does not
 count as a command.

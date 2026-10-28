@@ -11,19 +11,15 @@ description: |
 
 # Debugging perl
 
-The hooks of this plugin ask for this skill before a command that runs
-`perl -d`, and before an edit that adds `$DB::single`.  They also remind you of
-it in two cases.  One is a prompt that says that a program did what it cannot
-do.  The other is a turn that reads the code many times with no edit.
-
 Reading the code tells you what the code can do.  The debugger tells you what
 it did.  If the two disagree, the program is right and your reading is wrong.
 So stop reading and run the program.
 
-This happened in one session.  If the configuration has no key for a domain,
-`bin/new_config` dies.  `bin/provision` built such a domain anyway.  Ten
-searches of the code and the configuration found no way past the check.  The
-debugger found it in five runs.
+The usual case looks like this.  A program looks for a key in a hash.  If the
+key is not there, the program must die.  The key is not in the file that the hash
+comes from, and the program does not die.  Each search of the code finds no
+statement that writes the key.  A watch expression in the debugger finds that
+statement in one run.
 
 ## 1. Find a run that changes nothing
 
@@ -39,10 +35,11 @@ run does up to the branch that you want to see.
 
 ## 2. Compare two ways in
 
-Run the same check from two entry points.  In the session, `new_config` alone
-refused the domain, and `new_config` under `bin/provision` let it through.  So
-the cause was in the code that `bin/provision` runs first.  The difference
-between two runs is a smaller search than the whole program.
+Run the same check from two entry points.  For example, one program calls a
+module, and the module refuses an input.  Another program calls the same
+module with the same input, and the module accepts it.  Then the cause is in
+the code that the second program runs before the call.  The difference between two runs is a smaller search than the
+whole program.
 
 ## 3. Give the debugger its commands on standard input
 
@@ -66,7 +63,7 @@ printf '%s\n' 'b Some::Package::some_sub' 'c' 'p $x' 'T' 'q' \
 - Give every run a `timeout`.  A command that the debugger did not get leaves
   it waiting.
 
-The commands that did the work:
+The commands that do most of the work:
 
 | | |
 |---|---|
@@ -87,7 +84,7 @@ The commands that did the work:
 
 A breakpoint on a sub is better than one on a line.
 
-- `Line 667 not breakable` means that no statement starts on that line.  The
+- `Line N not breakable` means that no statement starts on that line.  The
   `unless` of a statement modifier is on its own line, for example.  Use the
   line that the statement starts on, or the sub.
 - A breakpoint on a line of another file needs the file loaded first.  A
@@ -111,8 +108,8 @@ data is in scope, and copy a reference to it into a package variable:
 b Some::Package::where_it_is_in_scope
 c
 n
-$main::C = $conf
-w exists $main::C->{'the.key'}
+$main::W = $data
+w exists $main::W->{$key}
 c
 T
 ```
@@ -120,33 +117,33 @@ T
 The line that the watch shows is the next one to run.  Look at the statements
 just above it for the change.
 
-## 6. What the session found
+## 6. Look for autovivification first
 
-The watch stopped in a sub that only read the configuration:
+If a key exists that nothing writes, look for this first.  A read that goes
+through a missing level makes that level:
 
 ```perl
-my $own = clone( ( defined $domain ? $conf->{$domain}{_global} : undef ) // {} );
+my $value = $hash->{$outer}{$inner};    # $hash->{$outer} now exists
 ```
 
-`$conf->{$domain}{_global}` reads, but to reach `{_global}` perl makes
-`$conf->{$domain}` as an empty hash.  This is autovivification.  `$conf` was
-the copy of the configuration that every caller shares.  So the domain was
-then in the configuration, and `exists` passed.
+The read returns undef, as you expect, and `$hash->{$outer}` is now an empty
+hash.  A `foreach` over `@{ $hash->{list} }`, and a reference taken with
+`\$hash->{key}`, make the key too.  It does the most harm in a hash that many
+callers share, such as a cache or a configuration that a module remembers.
+One caller reads, and every later caller finds the key.
 
-If a key exists that nothing writes, look for this first.  A nested read, a
-`foreach` over `@{ $h->{list} }`, and a reference taken with `\$h->{key}`
-each make the key.  Read one level at a time:
+Read one level at a time, and ask `exists` before you go down:
 
 ```perl
-my $mine = $conf->{$domain};
-my $own  = ( $mine // {} )->{_global};
+my $level = exists $hash->{$outer} ? $hash->{$outer} : {};
+my $value = $level->{$inner};
 ```
 
 ## 7. Read exit statuses from the program, not from a wrapper
 
 - If its caller leads a process group, `setsid` forks.  Then it returns 0 at
-  once, unless you give it `--wait`.  In the session, a run that died seemed to exit
-  0 for that reason.
+  once, unless you give it `--wait`.  A run that died can then seem to
+  succeed.
 - After a pipe, `$?` is the status of the last command.  Use `set -o pipefail`,
   or `${PIPESTATUS[0]}`.
 
