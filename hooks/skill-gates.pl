@@ -18,7 +18,7 @@ use Time::Local    ();
 
 =head1 NAME
 
-hooks/skill-gates.pl - refuse an edit, a commit, a post or a signal until the skills that it needs are loaded
+hooks/skill-gates.pl - refuse an edit, a commit, a post, a signal or a copy until the skills that it needs are loaded
 
 =head1 DESCRIPTION
 
@@ -48,7 +48,8 @@ stopping work.  C<PERL_SLOP_GATES=0> in the environment turns it off.
 =cut
 
 # edit and commit are for Perl.  prose is for anything written in any
-# language, and for anything said to anyone.  signal is for any process.
+# language, and for anything said to anyone.  signal is for any process,
+# and copy for a copy of any tree.
 # upstream is for a pull request to a repository that origin does not name.
 # debug is for a run of the perl debugger.
 our %BASE = (
@@ -56,6 +57,7 @@ our %BASE = (
     commit   => [ 'perl-slop:data-perl', 'perl-slop:testing-perl', 'perl-slop:reviewing-perl' ],
     prose    => ['perl-slop:information-security'],
     signal   => ['perl-slop:killing-processes'],
+    copy     => ['perl-slop:copying-files'],
     upstream => ['perl-slop:pull-requests'],
     debug    => ['perl-slop:debugging-perl'],
 );
@@ -111,6 +113,22 @@ our $SIGNAL_RX = qr{
     (?:sudo\s+(?:-\S+\s+)*)?
     (?:xargs\s+(?:-\S+\s+)*)?
     (?:kill|pkill|killall|pgrep)(?![\w-])
+}x;
+
+# A Bash command that copies a tree, so that it can fill a disk.  A cp without
+# -r, -R or -a copies files that the command names, and is left out.  A short
+# flag can be in a cluster, as in cp -pr or tar xzf, and tar takes its first
+# word without the dash.  A capital X is the exclude file of tar, not -x.
+our $WORDS_BEFORE_FLAG_RX = qr/(?:[^;&|\n]*?\s)?/;
+our $COPY_RX = qr{
+    $COMMAND_START_RX
+    (?:sudo\s+(?:-\S+\s+)*)?
+    (?:xargs\s+(?:-\S+\s+)*)?
+    (?: (?:rsync|dd)(?![\w-])
+      | cp\s+  $WORDS_BEFORE_FLAG_RX (?: -[A-Za-z]*[rRa] | --(?:recursive|archive)(?![\w-]) )
+      | scp\s+ $WORDS_BEFORE_FLAG_RX -[A-Za-z0-9]*r
+      | tar\s+ (?: [A-Za-z]*x[A-Za-z]*\s | $WORDS_BEFORE_FLAG_RX (?: -[A-Za-z]*x | --(?:extract|get)(?![\w-]) ) )
+    )
 }x;
 
 # A Bash command that runs the perl debugger.  -d:Module loads a module such as
@@ -232,6 +250,10 @@ sub decide {
         }
         if ( is_signal($command) ) {
             my $out = signal_gate($input);
+            return $out if $out;
+        }
+        if ( is_copy($command) ) {
+            my $out = copy_gate($input);
             return $out if $out;
         }
         if ( is_debugger($command) ) {
@@ -370,6 +392,21 @@ until C<perl-slop:killing-processes> is loaded.
 sub signal_gate {
     my ($input) = @_;
     return load_gate( $input, $BASE{signal}, 'a command that signals a process or picks processes by pattern', 'run it again' );
+}
+
+=head2 $output = copy_gate(\%input)
+
+Refuses a command that copies a tree until C<perl-slop:copying-files> is
+loaded.  The hook does not measure the copy, because to do that it must parse
+the include and exclude rules of rsync, and a wrong parse blocks a good copy
+or passes a bad one.  The model can measure with the arguments that it is
+about to use.
+
+=cut
+
+sub copy_gate {
+    my ($input) = @_;
+    return load_gate( $input, $BASE{copy}, 'a command that copies a tree', 'measure the copy and the free space, and run it again' );
 }
 
 =head2 $output = debug_gate(\%input)
@@ -1106,6 +1143,20 @@ substitution.  Text in the body of a heredoc does not count.
 sub is_signal {
     my ($command) = @_;
     return without_heredocs($command) =~ $SIGNAL_RX;
+}
+
+=head2 $bool = is_copy($command)
+
+Whether a Bash command runs C<rsync> or C<dd>, C<cp> with C<-r>, C<-R> or
+C<-a>, C<scp -r>, or a C<tar> that extracts, at its start, after a separator,
+after C<sudo> or C<xargs>, or in a command substitution.  Text in the body of
+a heredoc does not count.
+
+=cut
+
+sub is_copy {
+    my ($command) = @_;
+    return without_heredocs($command) =~ $COPY_RX;
 }
 
 =head2 $command = without_heredocs($command)

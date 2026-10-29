@@ -360,6 +360,31 @@ subtest 'a command that signals a process waits for killing-processes' => sub {
     like( run_bash( 'gh pr create --title x --body y && kill 1', transcript( skill( 's1', $PROSE ) ) ), qr/killing-processes/, 'a post that also kills waits for both' );
 };
 
+subtest 'a command that copies a tree waits for copying-files' => sub {
+    my $none   = transcript();
+    my $loaded = transcript( skill( 's1', 'perl-slop:copying-files' ) );
+
+    foreach my $command (
+        'rsync -a --exclude .git src/ dst/', 'cp -r src dst', 'cp -R src dst', 'cp -a src dst', 'cp -pr src dst', 'cp --recursive src dst', 'cp -t dst -r src',
+        'tar -xzf x.tar.gz', 'tar xzf x.tar', 'tar -C dst -xf x.tar', 'tar --extract -f x.tar', 'tar -cf - src | tar -xf - -C dst', 'scp -r host:src dst', 'scp -P 22 -r host:src dst',
+        'dd if=x.img of=y.img', 'sudo rsync -a src/ dst/', 'cd /bogus && cp -a src dst', "echo hi\nrsync -a src/ dst/", 'find . -name x | xargs -r cp -r -t dst',
+    ) {
+        like( run_bash( $command, $none ), qr/copying-files/, "refused: $command" );
+        is( run_bash( $command, $loaded ), undef, "allowed once it is loaded: $command" );
+    }
+    is( run_bash( 'cp src/x.txt dst/',                    $none ), undef, 'a cp of one file is allowed' );
+    is( run_bash( 'cp -f src/x.txt dst-a/',               $none ), undef, 'and so is one with a flag that does not copy a tree, and an a in a name' );
+    is( run_bash( 'cp --parents src/x.txt dst/',          $none ), undef, 'and a long flag that holds an r' );
+    is( run_bash( 'tar -czf x.tar.gz -X skip src',        $none ), undef, 'a tar that makes an archive is allowed' );
+    is( run_bash( 'tar -tzf x.tar.gz',                    $none ), undef, 'and so is one that lists it' );
+    is( run_bash( 'scp host:x.txt dst/',                  $none ), undef, 'and an scp of one file' );
+    is( run_bash( 'git add x && which rsync',             $none ), undef, 'and rsync as an argument, and dd inside a word' );
+    is( run_bash( 'ddate',                                $none ), undef, 'and a program whose name starts with dd' );
+    is( run_bash( "cat <<EOF\nrsync -a src/ dst/\nEOF\n", $none ), undef, 'and rsync in the body of a heredoc' );
+    unlike( run_bash( 'git commit -m "Gate rsync and cp -r"', $none ) // q{}, qr/copying-files/, 'and rsync in a commit message' );
+    unlike( run_bash( "git commit -F - <<'EOF'\nGate a copy\n\nrsync -a src/ dst/\nEOF\n", $none ) // q{}, qr/copying-files/, 'and in a commit message from a heredoc' );
+};
+
 subtest 'a run of the perl debugger, or a breakpoint in the code, waits for debugging-perl' => sub {
     my $none   = transcript();
     my $loaded = transcript( skill( 's1', 'perl-slop:debugging-perl' ) );

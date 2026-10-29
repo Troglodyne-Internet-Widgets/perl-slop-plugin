@@ -68,6 +68,13 @@ apply to every project, Perl or not.
   `pkill -f` and `pgrep -f` match the whole command line, and the shell that
   runs the command has the pattern in its own command line.  So the pattern
   matches that shell, and a session once ended itself that way.
+- Before a Bash command that runs `rsync` or `dd`, `cp` with `-r`, `-R` or
+  `-a`, `scp -r`, or a `tar` that extracts, `perl-slop:copying-files`.  This
+  covers those commands after `sudo` or `xargs`.  A copy of a tree that does
+  not fit fills the filesystem, and then every write to it fails, for every
+  process on the host.  The hook does not measure the copy.  To do that, it
+  must parse the include and exclude rules of rsync, and the model can
+  measure with the arguments that it is about to use.
 - Before a Bash command that runs `perl -d`, or sets `PERLDB_OPTS`,
   `perl-slop:debugging-perl`.  `perl -d:NYTProf` loads a profiler, so it does
   not count.  The same gate covers an edit that adds `$DB::single`.  A run of
