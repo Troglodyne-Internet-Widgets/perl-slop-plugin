@@ -491,6 +491,27 @@ subtest 'a refusal for a skill that the repository keeps asks the user for /add-
     unlike( $commit, qr/know[^.]*not-kept-here/, 'but not for a skill that the repository does not keep' );
 };
 
+# A gate on the skill of a plugin that the session lacks refuses every edit it
+# covers, and only the user can install the plugin.
+subtest 'a refusal for a skill of another plugin asks the user to install it' => sub {
+    my $config = $JSON->encode( { before_edit => { '**.md' => [ 'simple-english:simple-english', 'perl-slop:reading-perl' ] } } );
+    my $root   = repo( '.perl-slop.json' => $config, 'README.md' => "x\n" );
+    git( $root, 'add', '-A' );
+    git( $root, 'commit', '-q', '-m', 'config' );
+
+    my $why = edit( "$root/README.md", transcript() );
+    like( $why, qr{does[ ]not[ ]know[ ]simple-english:simple-english,[ ]the[ ]plugin[ ]simple-english[ ]is[ ]not[ ]enabled}, 'an edit names the plugin that the session lacks' );
+    like( $why, qr{ask[ ]the[ ]user[ ]to[ ]install[ ]and[ ]enable[ ]it[.][ ]+Do[ ]not[ ]change[ ]the[ ]repository}, 'and tells the model to ask, not to get around the gate' );
+    unlike( $why, qr{plugin[ ]perl-slop[ ]is[ ]not}, 'but not for a skill of this plugin, which is enabled when the hook runs' );
+
+    write_file( $root, 'README.md', "y\n" );
+    my $config_commit = $JSON->encode( { before_commit => { '**.md' => ['simple-english:simple-english'] } } );
+    write_file( $root, '.perl-slop.json', $config_commit );
+    git( $root, 'commit', '-q', '-am', 'commit gate' );
+    write_file( $root, 'README.md', "z\n" );
+    like( run_bash( "cd $root && git commit -am x", transcript( skill( 's3', $PROSE ) ) ), qr{the[ ]plugin[ ]simple-english[ ]is[ ]not[ ]enabled}, 'a commit names it too' );
+};
+
 subtest 'a prompt gets reminders of information-security, and of profiling-perl when it is about speed' => sub {
     my $root = repo( 'dist.ini' => "name = X\n" );
     my $ask  = sub {

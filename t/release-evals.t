@@ -80,9 +80,31 @@ C<--keep-temp> keeps each run's directory, and the distribution is under
 F<sealed/home/cwd> in it.  The distribution is model-written code, and its
 F<dist.ini> and F<.git> are configuration that dzil and git load.  So the checks
 run on a copy, in bwrap, with no network and nothing writable but the copy.
-Each kept directory is removed after its checks.  A distribution that fails a
-check is copied first, to a directory under F</tmp> that the test names, so
-that the failure can be read.
+The directory of a run that passed is removed after its checks.  The
+directory of a run that failed a grader, ended in an error, or failed a check
+is kept whole, with its trace in F<out/trace.jsonl>, and the test names it.
+So a failure can be read after the test ends.  Remove those directories when
+you are done with them.
+
+=head2 Where the runs are
+
+C<claude plugin eval> makes the directory of each run under C<TMPDIR>, and
+the sandbox of the run denies writes to all of F</tmp>.  A deny outranks the
+allow for the run's own home.  So with a directory under F</tmp>, no shell
+command of a run can write, and a run builds what the Write tool alone can
+build, with no F<.git>.  This runs the evals with C<TMPDIR> under
+C<XDG_CACHE_HOME>, F<~/.cache> by default, in F<perl-slop-evals>.  After each
+run it reads the sandbox settings that the run had, and fails when a path the
+run may write is under a path that it may not.
+
+=head2 The plugins that a case loads beside this one
+
+A case can load only the plugins inside this repository, as C<plugins> in its
+F<case.yaml>.  The scaffold of packaging-perl enables simple-english, and gates
+prose on one of its skills.  So before the runs, this copies each plugin of
+C<%EVAL_PLUGIN> from where Claude Code installed it into F<.eval-plugins>,
+which git ignores.  It fails when one is not installed, because a run without
+it cannot edit the prose of the distribution that it built.
 
 C<CHECK_WORKSPACE=path/to/workspace prove t/release-evals.t> runs only these
 checks, on one workspace, with no Claude session.  That is how to try a change
@@ -142,7 +164,6 @@ sub check_distribution {
 
     my @found = grep { -f "$_/dist.ini" } glob("$workspace/*");
     is( scalar @found, 1, "$label: the run left one distribution" ) or return;
-    my $failed_before = grep { !$_ } Test::More->builder->summary;
 
     my $copy = tempdir( CLEANUP => 1 );
     system( 'cp', '-a', $found[0], $copy ) == 0 or return fail("$label: copy $found[0]");
@@ -207,13 +228,6 @@ sub check_distribution {
     my ($autoviv) = $sandboxed->( $dist, {}, qw{perlcritic --profile .perlcriticrc --nocolor --verbose %l:%p\n zz-autoviv.pl} );
     is( join( q{ }, $autoviv =~ m/^(\d+):Variables::RequireNoAutovivification$/mg ), '4', "$label: and it reports a nested read only where no autovivification is not in scope" );
 
-    # The run's directory is removed after this, so a distribution that failed
-    # a check is kept where it can be read.
-    if ( ( grep { !$_ } Test::More->builder->summary ) > $failed_before ) {
-        my $keep = tempdir( 'packaging-eval-XXXXXX', TMPDIR => 1, CLEANUP => 0 );
-        system( 'cp', '-a', $found[0], $keep );
-        diag("$label: the distribution is kept at $keep/" . basename( $found[0] ));
-    }
     return;
 }
 
@@ -234,6 +248,13 @@ my $RUNS      = 3;
 my $THRESHOLD = '0.9';
 my $COST_CAP  = 20;
 my @TOOLS     = qw{Write Edit Bash};
+
+# Each plugin that a case loads beside this one: the directory under
+# .eval-plugins that its case.yaml names, and the name it is installed under.
+my %EVAL_PLUGIN = ( 'simple-english' => 'simple-english@simple-english' );
+
+# How many tests have failed so far.
+sub failures { return scalar grep { !$_ } Test::More->builder->summary }
 
 my $have_claude = grep { -x "$_/claude" } split /:/, $ENV{PATH} // q{};
 plan skip_all => 'claude is not on the PATH' unless $have_claude;
@@ -285,6 +306,41 @@ ok( $sandbox, 'bwrap can make the namespaces that the sandbox of a run needs' ) 
     exit 1;
 };
 
+my $installed = eval {
+    my $config = $ENV{CLAUDE_CONFIG_DIR} // "$ENV{HOME}/.claude";
+    open( my $fh, '<', "$config/plugins/installed_plugins.json" ) or die "$config/plugins/installed_plugins.json: $!\n";
+    local $/ = undef;
+    JSON::PP->new->decode(<$fh>)->{plugins};
+} // {};
+foreach my $dir ( sort keys %EVAL_PLUGIN ) {
+    my ($install) = map { $_->{installPath} } @{ $installed->{ $EVAL_PLUGIN{$dir} } // [] };
+    ok( $install && -d $install, "$EVAL_PLUGIN{$dir} is installed, so a case can load it" ) or next;
+    remove_tree(".eval-plugins/$dir");
+    mkdir '.eval-plugins';
+    is( system( 'cp', '-a', $install, ".eval-plugins/$dir" ), 0, "and it is copied to .eval-plugins/$dir" );
+}
+
+# Outside /tmp, which the sandbox of a run denies.
+my $RUN_TMP = ( $ENV{XDG_CACHE_HOME} || "$ENV{HOME}/.cache" ) . '/perl-slop-evals';
+mkdir( dirname($RUN_TMP) );
+mkdir($RUN_TMP);
+ok( -d $RUN_TMP, "the runs are made under $RUN_TMP" );
+
+# The paths that the sandbox of a run lets it write, but also denies, which
+# leaves them read-only.
+sub denied_writes {
+    my ($root) = @_;
+    my $settings = eval {
+        open( my $fh, '<', "$root/config/settings.json" ) or die "$root/config/settings.json: $!\n";
+        local $/ = undef;
+        JSON::PP->new->decode(<$fh>);
+    } // return ['the settings of the run cannot be read'];
+    my $fs    = $settings->{sandbox}{filesystem} // {};
+    my @deny  = map { s{\A//}{/}r } @{ $fs->{denyWrite} // [] };
+    my @allow = map { s{\A//}{/}r } @{ $fs->{allowWrite} // [] };
+    return [ grep { my $allow = $_; grep { $allow eq $_ || index( $allow, "$_/" ) == 0 } @deny } @allow ];
+}
+
 foreach my $skill (@changed) {
     my $json = tempdir( CLEANUP => 1 ) . '/result.json';
 
@@ -293,6 +349,7 @@ foreach my $skill (@changed) {
     my $status = do {
         open( my $saved, '<&', \*STDIN ) or die "dup STDIN: $!";
         open( STDIN, '<', '/dev/null' ) or die "/dev/null: $!";
+        local $ENV{TMPDIR} = $RUN_TMP;
         system(
             qw{claude plugin eval .}, '--case', "$skill-*",
             '--runs', $RUNS, '--ablation', 'none', '--threshold', $THRESHOLD,
@@ -337,9 +394,15 @@ foreach my $skill (@changed) {
               or do { diag( 'trace: ' . ( $run->{tracePath} // 'none' ) ); next };
 
             chmod 0700, $root, "$root/sealed";
+            my $failed_before = failures();
+            is_deeply( denied_writes($root), [], "$label: its sandbox let its shell write where the run worked" );
             check_distribution( $label, $case->{name}, "$root/sealed/home/cwd" ) if $skill eq 'packaging-perl';
 
             system( 'chmod', '-R', 'u+rwX', $root );
+            if ( !$run->{passed} || $run->{error} || failures() > $failed_before ) {
+                diag("$label: failed, so its directory is kept at $root, with the trace at $run->{tracePath}");
+                next;
+            }
             remove_tree($root);
         }
     }

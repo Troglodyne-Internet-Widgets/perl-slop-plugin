@@ -219,6 +219,10 @@ and put its authordep line back when you do.
 over your POD: it holds the vocabulary no dictionary has, the licence words
 from the COPYRIGHT section Pod::Weaver generates, and the names in that
 section and in AUTHORS: yours and the copyright holder's, which you add.
+Add each name with the Edit tool, one word to a line, in its sorted place.
+Do not rewrite the file with `perl -i` or a script. A script that prints
+after its read loop writes the file empty, and PodSpelling then fails on
+the licence words.
 A misspelling does not belong in it.
 
 **`Changes`** exists because `[CheckChangesHasContent]` refuses to release

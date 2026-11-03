@@ -1,0 +1,9 @@
+schema_version: "1"
+name: packaging-perl-modern
+# The scaffold's .claude/settings.json enables simple-english, and its
+# .perl-slop.json gates prose on a skill of it.  t/release-evals.t copies the
+# installed plugin into .eval-plugins, because a case can load only plugins
+# inside this repository.
+plugins:
+  - ../..
+  - ../../.eval-plugins/simple-english

@@ -52,6 +52,9 @@ stopping work.  C<PERL_SLOP_GATES=0> in the environment turns it off.
 # and copy for a copy of any tree.
 # upstream is for a pull request to a repository that origin does not name.
 # debug is for a run of the perl debugger.
+# The plugin that this hook belongs to, whose skills are loaded when it runs.
+our $PLUGIN = 'perl-slop';
+
 our %BASE = (
     edit     => ['perl-slop:reading-perl'],
     commit   => [ 'perl-slop:data-perl', 'perl-slop:testing-perl', 'perl-slop:reviewing-perl' ],
@@ -309,7 +312,7 @@ sub edit_gate {
     return if !@missing;
 
     my @named = @perl ? @perl : map { $_->[0] } @$files;
-    return deny( "Load @{[ list(@missing) ]} with the Skill tool before an edit to " . join( ', ', @named ) . ', then make the edit again.  A skill counts once it is loaded after the last compaction.' . add_dir_advice( [ sort keys %roots ], @missing ) );
+    return deny( "Load @{[ list(@missing) ]} with the Skill tool before an edit to " . join( ', ', @named ) . ', then make the edit again.  A skill counts once it is loaded after the last compaction.' . add_dir_advice( [ sort keys %roots ], @missing ) . plugin_advice(@missing) );
 }
 
 =head2 $output = commit_gate(\%input, $dir)
@@ -346,7 +349,30 @@ sub commit_gate {
     my @missing = grep { ( is_loaded( $loaded, $_ ) // -2 ) <= $since } sort keys %needed;
     return if !@missing;
 
-    return deny( "Before this commit, load @{[ list(@missing) ]} with the Skill tool and apply each to the " . 'changes, then commit again.  Each must be loaded after the last commit in this repository, ' . 'and after the last compaction.' . add_dir_advice( [$root], @missing ) );
+    return deny( "Before this commit, load @{[ list(@missing) ]} with the Skill tool and apply each to the " . 'changes, then commit again.  Each must be loaded after the last commit in this repository, ' . 'and after the last compaction.' . add_dir_advice( [$root], @missing ) . plugin_advice(@missing) );
+}
+
+=head2 $text = plugin_advice(@missing)
+
+A sentence for each plugin other than this one that owns a skill of
+C<@missing>, named as C<plugin:skill>: if the Skill tool does not know the
+skill, the plugin is not enabled in this session, and only the user can install
+and enable it.  It tells the model to stop and ask, rather than to find another
+way to make the change.  An empty string when there is none.
+
+=cut
+
+sub plugin_advice {
+    my (@missing) = @_;
+
+    my %of;
+    foreach my $skill (@missing) {
+        my ($plugin) = $skill =~ m/\A([^:]+):/;
+        push @{ $of{$plugin} }, $skill if defined $plugin && $plugin ne $PLUGIN;
+    }
+    return join q{}, map {
+        "  If the Skill tool does not know @{[ list( @{ $of{$_} } ) ]}, the plugin $_ is not enabled in this session.  Stop, and ask the user to install and enable it.  Do not change the repository, or make the change another way, to get past this gate."
+    } sort keys %of;
 }
 
 =head2 $text = add_dir_advice(\@roots, @missing)
