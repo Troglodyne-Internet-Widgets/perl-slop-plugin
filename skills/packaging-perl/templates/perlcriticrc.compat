@@ -96,8 +96,13 @@ formats = #!/usr/bin/env perl
 [ValuesAndExpressions::ProhibitLiteralArithmetic]
 [BuiltinFunctions::ProhibitIndirectBooleanGrep]
 # What ProhibitMutatingListFunctions reports, which this replaces, and a block
-# that changes $_ through a sub that it calls.
+# that changes $_ through a sub that it calls.  The two options add a call that
+# it cannot read, a method or a sub from elsewhere, while $_ is the caller's
+# element: in a list function block before local ($_) = $_, and before a
+# postfix for.
 [ControlStructures::ProhibitMutatingListFunctionsStricter]
+report_unresolved_calls = 1
+report_postfix_for_calls = 1
 # An if, elsif, else or unless whose block holds no statement, a comment
 # being none.  Loops are left alone, because a loop condition can do the work.
 [ControlStructures::ProhibitEmptyConditionalBlocks]

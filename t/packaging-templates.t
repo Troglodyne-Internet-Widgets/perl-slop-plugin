@@ -437,6 +437,19 @@ subtest 'the preferred modules ban Carp' => sub {
     like( $section, qr/^reason\s*=.*\bdie\b/m, 'and says to die instead' );
 };
 
+# Both options are off by default, and a policy section without them reports
+# only a sub that the policy can read.
+subtest 'both profiles turn on the call reports of the Stricter policy' => sub {
+    foreach my $profile ( [ perlcriticrc => $modern ], [ 'perlcriticrc.compat' => $compat ] ) {
+        my ( $name, $text ) = @$profile;
+        my ($section) = $text =~ m/^\[ControlStructures::ProhibitMutatingListFunctionsStricter\]\n((?:[^\[\n][^\n]*\n)*)/m;
+        ok( defined $section, "$name enables ProhibitMutatingListFunctionsStricter" ) or next;
+        like( $section, qr/^report_unresolved_calls\s*=\s*1$/m,  "and reports a call that it cannot read in a list function block" );
+        like( $section, qr/^report_postfix_for_calls\s*=\s*1$/m, "and a call before a postfix for" );
+    }
+    like( $dist, qr/authordep\s+Perl::Critic::Policy::ControlStructures::ProhibitMutatingListFunctionsStricter\s+=\s+0[.]002$/m, 'dist.ini asks for the version that has the options' );
+};
+
 # Each packaging-perl eval counts the policy sections of the .perlcriticrc that
 # Claude wrote, against the profile its floor picks.  A template that gains or
 # loses a policy has to move that count too, or the eval fails at release time.

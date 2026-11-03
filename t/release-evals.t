@@ -66,6 +66,10 @@ Readonly, which is what F<.preferred_modules.ini> is for.
 =item * perlcritic, with its profile, reports C<use Carp>, which F<.preferred_modules.ini>
 bans.
 
+=item * perlcritic, with its profile, reports a method call in a C<map> block
+and a sub call before a postfix C<for>, the two options of
+ProhibitMutatingListFunctionsStricter that the profile turns on.
+
 =back
 
 C<--keep-temp> keeps each run's directory, and the distribution is under
@@ -182,6 +186,13 @@ sub check_distribution {
     close($fh) or die "$dist: $!";
     my ($carp) = $sandboxed->( $dist, {}, qw{perlcritic --profile .perlcriticrc --single-policy PreferredModules --verbose %m\n zz-carp.pl} );
     like( $carp, qr/\bCarp\b/, "$label: and it reports use Carp" );
+
+    # Methods and a postfix for: what the two options of the policy add.
+    open( $fh, '>', "$dist/zz-topic.pl" ) or die "$dist: $!";
+    print {$fh} "use strict;\nuse warnings;\nmy \@names = map { \$_->name } \@ARGV;\nwarn_about(\$_) for \@ARGV;\n";
+    close($fh) or die "$dist: $!";
+    my ($topic) = $sandboxed->( $dist, {}, qw{perlcritic --profile .perlcriticrc --nocolor --single-policy ProhibitMutatingListFunctionsStricter --verbose %l\n zz-topic.pl} );
+    is( join( q{ }, sort { $a <=> $b } $topic =~ m/^(\d+)$/mg ), '3 4', "$label: and it reports calls while \$_ is the caller's element, in map and before a postfix for" );
 
     # The run's directory is removed after this, so a distribution that failed
     # a check is kept where it can be read.
