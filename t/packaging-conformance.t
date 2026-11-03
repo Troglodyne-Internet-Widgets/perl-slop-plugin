@@ -59,6 +59,8 @@ my %WRITES = (
     'post-commit'           => 'git-hooks/post-commit',
     'tests-covering-map.pl' => '.tests-covering-map.pl',
     'CLAUDE.md'             => 'CLAUDE.md',
+    'perl-slop.json'        => '.perl-slop.json',
+    'claude-settings.json'  => '.claude/settings.json',
 );
 
 my %FLAVOR = (
@@ -172,6 +174,29 @@ subtest '.perl-slop.json holds only what the hooks read' => sub {
     is( $config_status->('{"before_edit":["writing-recipes"]}'),           'fail', 'and so does a gate that is not a map of globs' );
     is( $config_status->('{"before_edit":{"lib/**":[{"name":"x"}]}}'),   'fail', 'or a skill that is not a name' );
     is( $config_status->('{"before_edit":'),                               'fail', 'or a file that is not JSON' );
+};
+
+# The gates are only as good as what the hook makes of them, and a gate on a
+# skill whose plugin a clone cannot install refuses every edit it covers.
+subtest 'the scaffold gates its prose, and can install what the gates ask for' => sub {
+    require_ok("$ROOT/hooks/skill-gates.pl");
+    my $repo = repository( 'troglodyne-5.040', %VARIABLES );
+    conformance($repo)->update;
+
+    foreach my $path (qw{README.md docs/guide.md lib/Foo/Bar.pod Changes}) {
+        is_deeply( [ PerlSlop::SkillGates::configured( $repo, 'before_edit', $path ) ], ['simple-english:simple-english'], "an edit of $path needs simple-english" );
+    }
+    foreach my $path (qw{lib/Foo/Bar.pm t/basic.t dist.ini}) {
+        is_deeply( [ PerlSlop::SkillGates::configured( $repo, 'before_edit', $path ) ], [], "an edit of $path does not" );
+    }
+
+    my $settings = PerlSlop::SkillGates::read_json( do { open( my $fh, '<', "$repo/.claude/settings.json" ) or die "settings: $!"; $fh } );
+    my @enabled  = sort grep { $settings->{enabledPlugins}{$_} } keys %{ $settings->{enabledPlugins} };
+    is_deeply( \@enabled, [qw{perl-slop@troglodyne-marketplace simple-english@simple-english}], 'the settings enable perl-slop and simple-english' );
+    foreach my $plugin (@enabled) {
+        my ($marketplace) = $plugin =~ m/\@(.+)\z/;
+        ok( $settings->{extraKnownMarketplaces}{$marketplace}{source}{repo}, "and name the marketplace of $plugin, so a clone can install it" );
+    }
 };
 
 subtest 'a placeholder that nothing fills stops its file, and says which' => sub {

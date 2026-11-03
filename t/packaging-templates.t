@@ -224,6 +224,7 @@ subtest 'the map says which files no test reads, and leaves the rest to the reco
         Changes LICENSE README.md CLAUDE.md docs/guide.md docs/guide.pod
         dist.ini weaver.ini prereqs.yml
         .perlcriticrc .perltidyrc .pod_stopwords .preferred_modules.ini .mailmap .gitignore .tests-covering-map.pl
+        .conformance.yml .perl-slop.json .claude/settings.json
         git-hooks/pre-commit git-hooks/post-commit .github/workflows/test.yml xt/author/critic.t
         }
       )

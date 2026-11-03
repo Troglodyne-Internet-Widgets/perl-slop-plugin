@@ -136,9 +136,15 @@ clone, which then gets the hooks that git does not install for it. You can also
 run it in an older distribution, which then gets the files that it lacks.
 `check` fails a profile whose first line is not the header of its template,
 and reports `info` for a hook that differs from its template. Merge such a
-file by hand. The hooks of this plugin ignore a key in `.perl-slop.json` that
-they do not read. So if the distribution has that file, `check` fails such a
-key.
+file by hand.
+
+`update` also writes two files that Claude Code reads, and `check` fails a
+distribution without them. `.claude/settings.json` enables this plugin and
+simple-english, and it names their marketplaces. So Claude Code offers to
+install both plugins in a new clone. `.perl-slop.json` requires the skill
+`simple-english:simple-english` before an edit of a Markdown file, a POD file
+or `Changes`. The hooks of this plugin ignore a key in `.perl-slop.json` that
+they do not read, so `check` fails such a key. Commit both files.
 
 Commit `.conformance.yml` with the rest. It records which flavor the
 distribution follows, so that `conformance check` can find a file that drifts

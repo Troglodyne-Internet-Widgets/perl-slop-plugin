@@ -6,11 +6,21 @@ description: The build, agent harness and tools of every troglodyne distribution
 variables:
   VERSION: '0.001'
 checks:
-  # Before ClaudeMd, which runs after it by name and only reads the file.
+  # Before ClaudeMd and ClaudeSettings, which run after it by name.  ClaudeMd
+  # only reads its file, and ClaudeSettings would write settings that name no
+  # marketplace, so a clone could not install the plugins that the gates need.
   AgentInstructions:
     module: ToolConfiguration
     files:
       CLAUDE.md: templates/CLAUDE.md
+      .claude/settings.json: templates/claude-settings.json
+      .perl-slop.json: templates/perl-slop.json
+  # The plugins whose skills the hooks and the gates of .perl-slop.json ask for.
+  ClaudeSettings:
+    file: .claude/settings.json
+    plugins:
+      - perl-slop@troglodyne-marketplace
+      - simple-english@simple-english
   ClaudeMd:
     file: CLAUDE.md
     template: templates/CLAUDE.md
@@ -40,12 +50,13 @@ checks:
     differ: info
     replace: false
     install: true
-  # The keys that hooks/skill-gates.pl reads, which ignores any other.  The file
-  # is optional, so a distribution without one conforms.
+  # The keys that hooks/skill-gates.pl reads, which ignores any other.
+  # AgentInstructions writes the file, so a distribution without it does not
+  # conform.
   SkillGates:
     module: DataSchema
     file: .perl-slop.json
-    missing: pass
+    missing: fail
     schema:
       type: object
       additionalProperties: false
