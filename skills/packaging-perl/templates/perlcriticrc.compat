@@ -77,6 +77,7 @@ strict = 1
 warn_level = 40
 info_level = 30
 [Variables::ProhibitUselessInitialization]
+[ValuesAndExpressions::RequireSlices]
 [PreferredModules]
 config = .preferred_modules.ini
 [logicLAB::RequireSheBang]
@@ -274,6 +275,8 @@ allow_unused_subroutine_arguments = 1
 # allow_if_computed_by = Test::MockModule->new Test::MockFile->file
 [Variables::ProtectPrivateVars]
 [Variables::RequireLexicalLoopIterators]
+# A block foreach with no loop variable, whose $_ the body can clobber.
+[Variables::ProhibitTopicIterator]
 [Variables::RequireLocalizedPunctuationVars]
 [Variables::RequireNegativeIndices]
 # Extensions to perl -c
