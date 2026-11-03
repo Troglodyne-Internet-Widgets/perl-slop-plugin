@@ -42,7 +42,7 @@ checks:
     install: true
   # The keys that hooks/skill-gates.pl reads, which ignores any other.  The file
   # is optional, so a distribution without one conforms.
-  PerlSlopConfig:
+  SkillGates:
     module: DataSchema
     file: .perl-slop.json
     missing: pass

@@ -113,9 +113,13 @@ is one character of a name.
 A `before_commit` entry applies to any changed file that matches it, Perl or
 not.
 
+A gate can name a skill of another plugin by its full name, for example
+`"docs/**": ["simple-english:simple-english"]`. A skill counts as loaded under
+its full name or under the part after the last `:`.
+
 The hooks ignore a key that they do not read, so a misspelled gate turns its
 rule off without a word. `conformance check` with a flavor of the
-packaging-perl skill fails such a key. The check is `PerlSlopConfig` in
+packaging-perl skill fails such a key. The check is `SkillGates` in
 `skills/packaging-perl/conformance/troglodyne.yml`, and the schema there lists
 the keys that the hooks read.
 

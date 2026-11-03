@@ -161,12 +161,13 @@ subtest '.perl-slop.json holds only what the hooks read' => sub {
     my $config_status = sub {
         my ($json) = @_;
         spew( "$repo/.perl-slop.json", $json );
-        my ($result) = grep { $_->{check} eq 'PerlSlopConfig' } @{ conformance($repo)->check };
+        my ($result) = grep { $_->{check} eq 'SkillGates' } @{ conformance($repo)->check };
         return $result->{status};
     };
 
     is( $config_status->('{"before_edit":{"lib/**":["writing-recipes"]},"before_commit":{"templates/**":["provisioning-recipes"]}}'), 'pass', 'the example of the README passes' );
     is( $config_status->('{"before_edit":{"lib/**":"writing-recipes"}}'), 'pass', 'and so does one skill without a list, which the hook also reads' );
+    is( $config_status->('{"before_commit":{"docs/**":["simple-english:simple-english"]}}'), 'pass', 'and a skill of another plugin, by its full name' );
     is( $config_status->('{"before_comit":{"lib/**":["x"]}}'),             'fail', 'a misspelled gate fails' );
     is( $config_status->('{"before_edit":["writing-recipes"]}'),           'fail', 'and so does a gate that is not a map of globs' );
     is( $config_status->('{"before_edit":{"lib/**":[{"name":"x"}]}}'),   'fail', 'or a skill that is not a name' );
