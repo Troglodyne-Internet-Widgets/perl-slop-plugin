@@ -224,6 +224,7 @@ subtest 'the map says which files no test reads, and leaves the rest to the reco
         Changes LICENSE README.md CLAUDE.md docs/guide.md docs/guide.pod
         dist.ini weaver.ini prereqs.yml
         .perlcriticrc .perltidyrc .pod_stopwords .preferred_modules.ini .mailmap .gitignore .tests-covering-map.pl
+        .conformance.yml .perl-slop.json .claude/settings.json
         git-hooks/pre-commit git-hooks/post-commit .github/workflows/test.yml xt/author/critic.t
         }
       )
@@ -402,7 +403,7 @@ subtest 'what the profiles read is scaffolded and shipped' => sub {
 
     # Every policy outside Perl::Critic's own distribution needs a line, or a
     # fresh clone cannot install what the profile names.
-    foreach my $policy ( 'ProhibitPrintSTDERR', 'Variables::ProhibitUnusedVarsStricter', 'RegularExpressions::PreventUselessMetacharacterEscapes', 'ValuesAndExpressions::ProhibitLiteralArithmetic' ) {
+    foreach my $policy ( 'ProhibitPrintSTDERR', 'Variables::ProhibitUnusedVarsStricter', 'RegularExpressions::PreventUselessMetacharacterEscapes', 'ValuesAndExpressions::ProhibitLiteralArithmetic', 'RegularExpressions::ProhibitIneffectiveModifiers', 'RegularExpressions::ProhibitRegexToSplitAtDelimiter', 'Variables::ProhibitTopicIterator', 'ValuesAndExpressions::RequireSlices', 'Variables::RequireNoAutovivification' ) {
         like( $dist, qr/authordep\s+Perl::Critic::Policy::\Q$policy\E/, "dist.ini declares the authordep for $policy" );
     }
 
@@ -424,6 +425,30 @@ subtest 'the preferred modules prefer Readonly to use constant' => sub {
     ok( defined $section, 'the template has a [constant] section' ) or return;
     like( $section, qr/^prefer\s*=\s*Readonly\s*$/m, 'and it prefers Readonly' );
     like( $section, qr/^reason\s*=/m,                  'and says why' );
+};
+
+# Carp adds the file and line to a message that ends in a newline, so the
+# reader gets them whether the author wanted them or not.  A ban has no prefer
+# line, because the answer is die and not another module.
+subtest 'the preferred modules ban Carp' => sub {
+    my $ini = slurp("$TEMPLATES/preferred_modules.ini");
+    my ($section) = $ini =~ m/^\[Carp\]\n((?:[^\[\n][^\n]*\n)*)/m;
+    ok( defined $section, 'the template has a [Carp] section' ) or return;
+    unlike( $section, qr/^prefer\s*=/m, 'and names no module to use instead' );
+    like( $section, qr/^reason\s*=.*\bdie\b/m, 'and says to die instead' );
+};
+
+# Both options are off by default, and a policy section without them reports
+# only a sub that the policy can read.
+subtest 'both profiles turn on the call reports of the Stricter policy' => sub {
+    foreach my $profile ( [ perlcriticrc => $modern ], [ 'perlcriticrc.compat' => $compat ] ) {
+        my ( $name, $text ) = @$profile;
+        my ($section) = $text =~ m/^\[ControlStructures::ProhibitMutatingListFunctionsStricter\]\n((?:[^\[\n][^\n]*\n)*)/m;
+        ok( defined $section, "$name enables ProhibitMutatingListFunctionsStricter" ) or next;
+        like( $section, qr/^report_unresolved_calls\s*=\s*1$/m,  "and reports a call that it cannot read in a list function block" );
+        like( $section, qr/^report_postfix_for_calls\s*=\s*1$/m, "and a call before a postfix for" );
+    }
+    like( $dist, qr/authordep\s+Perl::Critic::Policy::ControlStructures::ProhibitMutatingListFunctionsStricter\s+=\s+0[.]003$/m, 'dist.ini asks for the version that judges a call only where $_ is the caller\'s' );
 };
 
 # Each packaging-perl eval counts the policy sections of the .perlcriticrc that

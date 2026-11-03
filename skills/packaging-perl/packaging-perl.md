@@ -14,9 +14,12 @@ around it: a `dzil release` that stops on a changelog nobody wrote, a fresh
 clone that cannot install its own author dependencies, two READMEs that disagree
 because one was generated and one was typed.
 
-Everything here is in `templates/` beside this file. Copy them, substitute, and
-you have a distribution that builds, tests and releases. The rest of this
-document is why each piece is there.
+Everything here is in `templates/` beside this file, and `conformance/` says
+which of them a distribution gets, under which names. The `conformance` program
+from Dist::Conformance reads those flavors, writes the templates with their
+placeholders filled in, and installs the hooks. The result is a distribution
+that builds, tests and releases. The rest of this document is why each piece is
+there.
 
 ## Ask which perl before you copy anything
 
@@ -28,15 +31,16 @@ means editing all of them at once.
 Two answers, and they make genuinely different distributions.
 
 **A perl you control.** One you build, or a machine you install onto, where 5.40
-or later is your decision to make. Copy `templates/perlcriticrc` and declare
-`use 5.040`, or higher. This is the strict profile, and it is strict *because*
-of the version: the language itself now refuses indirect method calls, bareword
+or later is your decision to make. Use the flavor `troglodyne-5.040`, which
+writes `templates/perlcriticrc`. Declare `use 5.040`, or higher. This is the
+strict profile, and it is strict *because* of the version: the language itself now refuses indirect method calls, bareword
 filehandles and code without `strict`, so the profile spends nothing on saying
 so and names the rest of Perl::Critic instead.
 
 **Whatever is already installed.** Anything that ships to somebody else's
-machine, runs on a system perl, or lands in a container you do not build. Copy
-`templates/perlcriticrc.compat` and declare `use 5.014`, and never lower --
+machine, runs on a system perl, or lands in a container you do not build. Use
+the flavor `troglodyne-compat`, which writes `templates/perlcriticrc.compat`.
+Declare `use 5.014`, and never lower.
 `RegularExpressions::RequireDefault` wants `/aa` on every pattern and `/aa`
 arrived in 5.14, so a lower declaration is one the code does not keep. Nothing
 older is worth the effort either: a perl before 5.14 is a box somebody is paying
@@ -73,50 +77,78 @@ printf 'use 5.042; my $s = "\xc3\xa9";' | perl   # non-ASCII character illegal?
 
 ## Scaffold it
 
+The scaffold needs the `conformance` program, from the CPAN distribution
+Dist::Conformance. Make the directory and its repository, and write a
+`.conformance.yml` at its root:
+
 ```
-SKILL=<this skill's directory>
-mkdir -p newdist/lib newdist/t newdist/git-hooks && cd newdist && git init
-
-cp $SKILL/templates/dist.ini              dist.ini
-cp $SKILL/templates/weaver.ini            weaver.ini
-cp $SKILL/templates/Changes               Changes
-cp $SKILL/templates/prereqs.yml           prereqs.yml
-cp $SKILL/templates/LICENSE               LICENSE
-cp $SKILL/templates/perlcriticrc          .perlcriticrc   # or perlcriticrc.compat
-cp $SKILL/templates/perltidyrc            .perltidyrc
-cp $SKILL/templates/preferred_modules.ini .preferred_modules.ini
-cp $SKILL/templates/pod_stopwords         .pod_stopwords
-cp $SKILL/templates/gitignore             .gitignore
-cp $SKILL/templates/mailmap               .mailmap
-cp $SKILL/templates/pre-commit            git-hooks/pre-commit
-cp $SKILL/templates/post-commit           git-hooks/post-commit
-cp $SKILL/templates/tests-covering-map.pl .tests-covering-map.pl
-cp $SKILL/templates/CLAUDE.md             CLAUDE.md
-
-chmod +x git-hooks/pre-commit git-hooks/post-commit
-cp git-hooks/pre-commit git-hooks/post-commit .git/hooks/
+mkdir -p Foo-Bar/lib Foo-Bar/t && cd Foo-Bar && git init
+cat > .conformance.yml <<'YAML'
+flavor: troglodyne-5.040        # or troglodyne-compat
+source:
+  git: https://github.com/Troglodyne-Internet-Widgets/perl-slop-plugin.git
+  path: skills/packaging-perl
+variables:
+  DIST: Foo-Bar
+  AUTHOR_NAME: A. Tester
+  AUTHOR_EMAIL: tester@test.test
+  COPYRIGHT_HOLDER: Test Co
+  YEAR: '2026'
+  GITHUB_USER: tester
+  CPAN_ID: TESTER
+  DATE: '2026-11-03'
+YAML
 ```
 
-Install both hooks in every clone, including this first one -- git will not do
-it for you, and a hook nobody installed is a tree that drifts.
-
-Then substitute. The placeholders are the same in every file:
+The flavor is the answer to the question above. The variables fill the
+placeholders of the templates:
 
 | | |
 |---|---|
-| `{{DIST}}` | the distribution name, as `dist.ini`'s `name =` — `Configd`, `Foo-Bar` |
-| `{{VERSION}}` | `0.001` for something new |
-| `{{PERL_FLOOR}}` | the perl you settled on above — `5.040` or `5.014` |
-| `{{AUTHOR_NAME}}`, `{{AUTHOR_EMAIL}}` | as they should appear in POD and metadata |
-| `{{COPYRIGHT_HOLDER}}`, `{{YEAR}}` | for the licence and the generated POD |
-| `{{GITHUB_USER}}` | the account the repository lives under, for `[GithubMeta]` |
-| `{{CPAN_ID}}` | your PAUSE id, for the `Changes` entry |
-| `{{DATE}}` | today, `YYYY-MM-DD` |
+| `DIST` | the distribution name, as `dist.ini`'s `name =`, for example `Configd` or `Foo-Bar` |
+| `AUTHOR_NAME`, `AUTHOR_EMAIL` | as they must appear in POD and metadata |
+| `COPYRIGHT_HOLDER`, `YEAR` | for the licence and the generated POD |
+| `GITHUB_USER` | the account that the repository lives under, for `[GithubMeta]` |
+| `CPAN_ID` | your PAUSE id, for the `Changes` entry |
+| `DATE` | today, `YYYY-MM-DD` |
+
+The flavor sets two more. `VERSION` is `0.001`, and `PERL_FLOOR` is `5.040` or
+`5.014`. If the floor is another version, for example `5.038`, set
+`PERL_FLOOR` in `variables` too. Quote each value that looks like a number.
+
+Then write the files:
 
 ```
-sed -i 's/{{DIST}}/Configd/; s/{{VERSION}}/0.001/; s/{{PERL_FLOOR}}/5.040/; ...' dist.ini weaver.ini Changes prereqs.yml LICENSE .gitignore .mailmap CLAUDE.md
-grep -rn '{{' . && echo 'still some to fill in'
+conformance update --standards <the root of this plugin>
+conformance check  --standards <the root of this plugin>
 ```
+
+`--standards` reads the flavors from this copy of the plugin, the version whose
+skill you are reading, and fetches nothing. Without it, `conformance` fetches
+the repository that `source` names. `update` writes each template under its
+name, with its placeholders filled in. It makes the hooks executable and
+installs them into `.git/hooks`. If no variable fills a placeholder of a
+template, `update` does not write that file, and it says which variable to add.
+`check` must report a pass for each check.
+
+`update` never overwrites a file that exists. So you can run it again in a
+clone, which then gets the hooks that git does not install for it. You can also
+run it in an older distribution, which then gets the files that it lacks.
+`check` fails a profile whose first line is not the header of its template,
+and reports `info` for a hook that differs from its template. Merge such a
+file by hand.
+
+`update` also writes two files that Claude Code reads, and `check` fails a
+distribution without them. `.claude/settings.json` enables this plugin and
+simple-english, and it names their marketplaces. So Claude Code offers to
+install both plugins in a new clone. `.perl-slop.json` requires the skill
+`simple-english:simple-english` before an edit of a Markdown file, a POD file
+or `Changes`. The hooks of this plugin ignore a key in `.perl-slop.json` that
+they do not read, so `check` fails such a key. Commit both files.
+
+Commit `.conformance.yml` with the rest. It records which flavor the
+distribution follows, so that `conformance check` can find a file that drifts
+from the standard later.
 
 Check it before writing any code:
 
@@ -168,7 +200,7 @@ rest. It does not write the abstract in `NAME`. You write that, as an
 question above picked, and it names a good number of policies that are not in
 core Perl::Critic. That is what the second block of authordeps is for. Each
 profile's own header says what it assumes about the perl and which policies that
-assumption pays for, so read the top of the one you copied before editing it.
+assumption pays for, so read the top of the one the flavor wrote before editing it.
 
 Comment a profile with `#`. Perl::Critic reads `;` as a comment too, so a line
 that starts with `;` works, but it is a habit from `dist.ini`. There the `;`
@@ -199,7 +231,7 @@ person once per address they have ever committed from.
 runs `perlcritic --profile .perlcriticrc` over the same files, and then runs the
 tests. It needs
 no opinion about which profile that is: the question at the top of this document
-already decided, and the answer was copied to that name. Tracked in the
+already decided, and the flavor wrote the answer to that name. Tracked in the
 repository rather than only in `.git/hooks`, because git does not version or
 clone hooks, so an untracked one exists on exactly one machine.
 

@@ -60,6 +60,7 @@ strict = 1
 [Variables::ProhibitUselessVarClearing]
 [Subroutines::ProhibitTailRecursion]
 [Bangs::ProhibitUselessRegexModifiers]
+[RegularExpressions::ProhibitIneffectiveModifiers]
 [Bangs::ProhibitCommentedOutCode]
 [Tics::ProhibitUseBase]
 [Plicease::ProhibitLeadingZeros]
@@ -76,6 +77,7 @@ strict = 1
 warn_level = 40
 info_level = 30
 [Variables::ProhibitUselessInitialization]
+[ValuesAndExpressions::RequireSlices]
 [PreferredModules]
 config = .preferred_modules.ini
 [logicLAB::RequireSheBang]
@@ -86,6 +88,7 @@ formats = #!/usr/bin/env perl
 [Performance::ProhibitRegexForSimpleSubstring]
 [RegularExpressions::ProhibitRegexToStripAffix]
 [RegularExpressions::ProhibitRegexToChomp]
+[RegularExpressions::ProhibitRegexToSplitAtDelimiter]
 [BuiltinFunctions::ProhibitChainingSameListSub]
 [RegularExpressions::ProhibitRegexForStringEquality]
 [Subroutines::ProhibitUnderscorePrivateSubs]
@@ -93,8 +96,13 @@ formats = #!/usr/bin/env perl
 [ValuesAndExpressions::ProhibitLiteralArithmetic]
 [BuiltinFunctions::ProhibitIndirectBooleanGrep]
 # What ProhibitMutatingListFunctions reports, which this replaces, and a block
-# that changes $_ through a sub that it calls.
+# that changes $_ through a sub that it calls.  The two options add a call that
+# it cannot read, a method or a sub from elsewhere, while $_ is the caller's
+# element: in a list function block before local ($_) = $_, and before a
+# postfix for.
 [ControlStructures::ProhibitMutatingListFunctionsStricter]
+report_unresolved_calls = 1
+report_postfix_for_calls = 1
 # An if, elsif, else or unless whose block holds no statement, a comment
 # being none.  Loops are left alone, because a loop condition can do the work.
 [ControlStructures::ProhibitEmptyConditionalBlocks]
@@ -272,7 +280,12 @@ allow_unused_subroutine_arguments = 1
 # allow_if_computed_by = Test::MockModule->new Test::MockFile->file
 [Variables::ProtectPrivateVars]
 [Variables::RequireLexicalLoopIterators]
+# A block foreach with no loop variable, whose $_ the body can clobber.
+[Variables::ProhibitTopicIterator]
 [Variables::RequireLocalizedPunctuationVars]
 [Variables::RequireNegativeIndices]
+# A read through a missing level, such as $h{a}{b}, creates $h{a}.  Write
+# no autovivification; in the scope, which [AutoPrereqs] then declares.
+[Variables::RequireNoAutovivification]
 # Extensions to perl -c
 [CompileTime]
