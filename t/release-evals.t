@@ -86,6 +86,17 @@ is kept whole, with its trace in F<out/trace.jsonl>, and the test names it.
 So a failure can be read after the test ends.  Remove those directories when
 you are done with them.
 
+=head2 Where the runs are
+
+C<claude plugin eval> makes the directory of each run under C<TMPDIR>, and
+the sandbox of the run denies writes to all of F</tmp>.  A deny outranks the
+allow for the run's own home.  So with a directory under F</tmp>, no shell
+command of a run can write, and a run builds what the Write tool alone can
+build, with no F<.git>.  This runs the evals with C<TMPDIR> under
+C<XDG_CACHE_HOME>, F<~/.cache> by default, in F<perl-slop-evals>.  After each
+run it reads the sandbox settings that the run had, and fails when a path the
+run may write is under a path that it may not.
+
 =head2 The plugins that a case loads beside this one
 
 A case can load only the plugins inside this repository, as C<plugins> in its
@@ -309,6 +320,27 @@ foreach my $dir ( sort keys %EVAL_PLUGIN ) {
     is( system( 'cp', '-a', $install, ".eval-plugins/$dir" ), 0, "and it is copied to .eval-plugins/$dir" );
 }
 
+# Outside /tmp, which the sandbox of a run denies.
+my $RUN_TMP = ( $ENV{XDG_CACHE_HOME} || "$ENV{HOME}/.cache" ) . '/perl-slop-evals';
+mkdir( dirname($RUN_TMP) );
+mkdir($RUN_TMP);
+ok( -d $RUN_TMP, "the runs are made under $RUN_TMP" );
+
+# The paths that the sandbox of a run lets it write, but also denies, which
+# leaves them read-only.
+sub denied_writes {
+    my ($root) = @_;
+    my $settings = eval {
+        open( my $fh, '<', "$root/config/settings.json" ) or die "$root/config/settings.json: $!\n";
+        local $/ = undef;
+        JSON::PP->new->decode(<$fh>);
+    } // return ['the settings of the run cannot be read'];
+    my $fs    = $settings->{sandbox}{filesystem} // {};
+    my @deny  = map { s{\A//}{/}r } @{ $fs->{denyWrite} // [] };
+    my @allow = map { s{\A//}{/}r } @{ $fs->{allowWrite} // [] };
+    return [ grep { my $allow = $_; grep { $allow eq $_ || index( $allow, "$_/" ) == 0 } @deny } @allow ];
+}
+
 foreach my $skill (@changed) {
     my $json = tempdir( CLEANUP => 1 ) . '/result.json';
 
@@ -317,6 +349,7 @@ foreach my $skill (@changed) {
     my $status = do {
         open( my $saved, '<&', \*STDIN ) or die "dup STDIN: $!";
         open( STDIN, '<', '/dev/null' ) or die "/dev/null: $!";
+        local $ENV{TMPDIR} = $RUN_TMP;
         system(
             qw{claude plugin eval .}, '--case', "$skill-*",
             '--runs', $RUNS, '--ablation', 'none', '--threshold', $THRESHOLD,
@@ -362,6 +395,7 @@ foreach my $skill (@changed) {
 
             chmod 0700, $root, "$root/sealed";
             my $failed_before = failures();
+            is_deeply( denied_writes($root), [], "$label: its sandbox let its shell write where the run worked" );
             check_distribution( $label, $case->{name}, "$root/sealed/home/cwd" ) if $skill eq 'packaging-perl';
 
             system( 'chmod', '-R', 'u+rwX', $root );
