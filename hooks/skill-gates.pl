@@ -73,16 +73,28 @@ our $JSON_CLASS = ( eval { require Cpanel::JSON::XS; 1 } ? 'Cpanel::JSON::XS' : 
 
 our $PERL_EXT_RX = qr/[.](?:pm|pl|t|psgi)\z/;
 
-# A Bash command that writes a file.  perltidy is left out, because it changes
-# layout and not what the code does.  The -i of perl can follow other switches
-# in one word, as in -pi, but not a switch whose argument is the rest of the
-# word, as the -I of -Ilib is.
+# Where the program starts in the bare words of one command: after any
+# variable assignments and the programs that run another, or after the -exec
+# of find.  An argument that names a program, as in grep python, is not one.
+our $PROGRAM_RX = qr{
+    (?: \A (?:\w+=\S*\s+)*
+        (?: (?:sudo|env|xargs|nohup|nice|time|exec|command|then|do|else|[\{!]|timeout\s+\S+) (?:\s+(?:-\S+|\w+=\S*))* \s+ )*
+      | \s-(?:exec|execdir|ok|okdir)\s+
+    )
+    (?:\S*/)?
+}x;
+
+# A command that writes the files that it names.  perltidy is left out,
+# because it changes layout and not what the code does.  The -i of perl can
+# follow other switches in one word, as in -pi, but not a switch whose argument
+# is the rest of the word, as the -I of -Ilib is.  sed -i and perl -i count
+# after any wrapper, since their switch says that they write, but a bare name
+# counts only where the program starts.  A redirection is not here, because it
+# writes only its own file.  See shell_commands.
 our $WRITES_RX = qr{
-    \bsed\s+(?:-\w*\s+)*-\w*i
-  | \bperl\s+(?:-\w+\s+)*-(?![IMmdDexXCV])\w*i
-  | \bpython3?\b
-  | \btee\b | \bcp\b | \bmv\b | \binstall\b | \bpatch\b
-  | >>?
+    (?:\A|\s|/) sed\s+(?:-\w*\s+)*-\w*i
+  | (?:\A|\s|/) perl[\d.]*\s+(?:-\w+\s+)*-(?![IMmdDexXCV])\w*i
+  | $PROGRAM_RX (?:python[\d.]*|tee|cp|mv|install|patch)(?![\w.-])
 }x;
 
 # Where a new command can start in a Bash command line.
@@ -166,13 +178,49 @@ our $STUCK_RX = qr{
   | \bit\s+did\s+(?:indeed|in\s+fact|actually)\b
 }xi;
 
-# The start of a gh pr create.  pr_create_args finds the end of its command.
+# The start of a gh pr create, in the bare words of one command.
 our $PR_CREATE_RX = qr/${COMMAND_START_RX}gh\s+pr\s+create(?![\w-])/;
 
-# A word of a command, in the order that pr_create_args tries them: an escape,
-# a command substitution, a bracket, a quote, the end of a command, a run of
-# anything else, or a single character that is none of them.
-our $SHELL_TOKEN_RX = qr/\G(\\.|\$\(|[()'"]|[;&|\n]|[^\\()'";&|\n\$]+|.)/s;
+# A token of a Bash command outside quotes, in the order that shell_commands
+# tries them: a line continuation, an escape, a quote, a command or process
+# substitution, a backquote, a redirection, the end of a command, a bracket,
+# blanks, a run of anything else, or a single character that is none of them.
+our $SHELL_TOKEN_RX = qr{\G(
+    \\\n | \\. | ['"`] | [\$<>]\(
+  | &>>? | >> | >[|&] | <<< | <<-? | <[&>] | [<>]
+  | && | \|\| | ;; | \|& | [;&|\n]
+  | [()]
+  | [ \t]+
+  | [^\\'"`\$<>&|;()\s]+
+  | .
+)}xs;
+
+# A token inside double quotes: an escape, the end of the quotes, a command
+# substitution, a backquote, or a run of anything else.
+our $QUOTED_TOKEN_RX = qr/\G(\\[\\"\$`\n]|"|\$\(|`|[^\\"\$`]+|.)/s;
+
+# The redirections that write the file that follows them.  >& writes one only
+# when what follows it is not a descriptor, as the 1 of 2>&1 is.
+our $WRITE_REDIRECT_RX = qr/\A(?:>|>>|>\||&>|&>>|<>)\z/;
+our $DESCRIPTOR_RX     = qr/\A(?:\d+|-)\z/;
+
+# The delimiter of a heredoc.  << before a number is a shift, as in $((1<<2)).
+our $HEREDOC_END_RX = qr/\A[A-Za-z_][\w.-]*\z/;
+
+# What shell_commands does with each token outside quotes that is not part of a
+# word.  Each is called with the state of the parse and the token.
+our %SHELL_ACTION = (
+    "\\\n" => sub { },
+    q{'}   => sub { my ($parse) = @_; $parse->{text} =~ m/\G([^']*)'?/gc; shell_add( $parse, $1, 1 ) },
+    q{"}   => sub { my ($parse) = @_; shell_add( $parse, q{}, 1 ); push @{ $parse->{frames} }, { kind => q{"} } },
+    '`'    => sub { my ($parse) = @_; shell_frame($parse) eq '`' ? shell_close($parse) : shell_open( $parse, '`' ) },
+    '('    => sub { my ($parse) = @_; shell_end_command($parse); push @{ $parse->{frames} }, { kind => '(' } },
+    ')'    => \&shell_close_bracket,
+    "\n"   => sub { my ($parse) = @_; shell_end_command($parse); shell_bodies($parse) },
+    ( map { $_ => sub { shell_open( $_[0], '$(' ) } } '$(', '<(', '>(' ),
+    ( map { $_ => \&shell_end_command } ';', '&', '|', '&&', '||', ';;', '|&' ),
+    ( map { $_ => \&shell_redirect } '>', '>>', '>|', '>&', '&>', '&>>', '<', '<<', '<<-', '<<<', '<&', '<>' ),
+);
 
 # An --assignee among the arguments of gh pr create, and the logins it names.
 our $ASSIGNEE_RX = qr/(?<!\S)(?:--assignee(?:=|\s+|\z)|-a\s*)(\S*)/;
@@ -456,7 +504,7 @@ C<-d:Module> loads a module in place of the debugger, so it does not count.
 
 sub is_debugger {
     my ($command) = @_;
-    return without_heredocs($command) =~ $DEBUGGER_RX;
+    return bare_command($command) =~ $DEBUGGER_RX;
 }
 
 =head2 $bool = adds_breakpoint(\%tool_input)
@@ -1009,25 +1057,26 @@ sub head_time {
 
 Whether a Bash command runs C<git commit>, at its start or after a separator.
 C<git commit-tree>, a C<git log> that mentions a commit, and a C<git commit>
-in the body of a heredoc, are not.
+in quotes or in the body of a heredoc, are not.
 
 =cut
 
 sub is_commit {
     my ($command) = @_;
-    return without_heredocs($command) =~ m/${COMMAND_START_RX}git\s+(?:-\S+\s+\S+\s+)*commit(?![\w-])/;
+    return bare_command($command) =~ m/${COMMAND_START_RX}git\s+(?:-\S+\s+\S+\s+)*commit(?![\w-])/;
 }
 
 =head2 $bool = is_publish($command)
 
 Whether a Bash command posts to an issue, a pull request, a release or a gist
-with C<gh> or C<glab>.  Text in the body of a heredoc does not count.
+with C<gh> or C<glab>.  Text in quotes or in the body of a heredoc does not
+count.
 
 =cut
 
 sub is_publish {
     my ($command) = @_;
-    return without_heredocs($command) =~ $PUBLISH_RX;
+    return bare_command($command) =~ $PUBLISH_RX;
 }
 
 =head2 $bool = is_upstream_pr($command, $dir)
@@ -1045,11 +1094,11 @@ request counts as upstream, because the gate only asks for a skill.
 
 sub is_upstream_pr {
     my ( $command, $dir ) = @_;
-    my ($args) = pr_create_args($command) or return;
+    my $args = pr_create_args($command) // return;
 
-    return 1 if $args =~ m/(?:--head[=\s]|-H\s*)["']?[^\s"':]+:/;
+    return 1 if $args =~ m/(?<!\S)(?:--head[=\s]|-H\s*)[^\s:]+:/;
     my $origin = repo_of( output_in( $dir, @ORIGIN_COMMAND ) ) // return 1;
-    my ($named) = $args =~ m/(?:--repo[=\s]|-R\s*)["']?([^\s"']+)/;
+    my ($named) = $args =~ m/(?<!\S)(?:--repo[=\s]|-R\s*)(\S+)/;
     my $base = repo_of( $named // output_in( $dir, @BASE_COMMAND ) ) // return 1;
     return $base ne $origin;
 }
@@ -1065,49 +1114,32 @@ as a title, does not count.
 
 sub is_unassigned_pr {
     my ($command) = @_;
-    my ( undef, $bare ) = pr_create_args($command) or return;
+    my $args = pr_create_args($command) // return;
 
-    my @assignees = map { split m/[,]/ } $bare =~ m/$ASSIGNEE_RX/g;
+    my @assignees = map { split m/[,]/ } $args =~ m/$ASSIGNEE_RX/g;
     my $wanted    = wanted_assignee();
     return !@assignees if !length $wanted;
     return !List::Util::any { lc $_ eq lc $wanted } @assignees;
 }
 
-=head2 ($args, $bare) = pr_create_args($command)
+=head2 $args = pr_create_args($command)
 
 The arguments of the first C<gh pr create> in a Bash command, up to the end of
-its command, or the empty list when it runs none.  C<$bare> is the same
-arguments with each C<$(...)> taken out, and each quoted word unquoted, with a
-NUL for each blank in it.  So a quoted word stays one word, and a flag inside
-one, such as in a title, does not start a word.  The body of a
-heredoc is taken out first.  A newline inside quotes or inside C<$(...)> does
-not end the command, so the arguments after a body that spans lines still
-count.
+its command, or undef when it runs none.  Each argument is unquoted, with a
+NUL for each blank in it, and they are joined with a space.  So a quoted word
+stays one word, and a flag inside one, such as in a title, does not start a
+word.  What a C<$(...)> prints is not known, so it adds nothing.  See
+C<shell_commands>.
 
 =cut
 
 sub pr_create_args {
     my ($command) = @_;
-    my $text = without_heredocs($command);
-    $text =~ m/$PR_CREATE_RX/g or return;
-
-    my ( $args, $bare, @open ) = ( q{}, q{} );
-    while ( $text =~ m/$SHELL_TOKEN_RX/gc ) {
-        my $token   = $1;
-        my $in      = $open[-1] // q{};
-        my $outside = !@open;
-        my $quoted  = @open == 1 && $in ne '(';
-        if    ( $in eq q{'} )                                        { pop @open if $token =~ m/'\z/ }
-        elsif ( $token eq q{"} )                                     { $in eq q{"} ? pop @open : push @open, q{"} }
-        elsif ( $token eq q{'} && $in ne q{"} )                      { push @open, q{'} }
-        elsif ( $token eq '$(' || ( $token eq '(' && $in ne q{"} ) ) { push @open, '(' }
-        elsif ( $token eq ')' && $in eq '(' )                        { pop @open }
-        elsif ( $outside && $token =~ m/\A[;&|\n]\z/ )               { last }
-        $args .= $token;
-        if    ( $outside && !@open )            { $bare .= $token }
-        elsif ( $quoted && @open == 1 )         { $bare .= $token =~ s/\s/\0/gr }
+    foreach my $words ( map { $_->{words} } shell_commands($command) ) {
+        my $args = words_after( $words, $PR_CREATE_RX ) // next;
+        return join q{ }, map { $_->{text} =~ s/\s/\0/gr } @$args;
     }
-    return ( $args, $bare );
+    return;
 }
 
 =head2 $repo = repo_of($name)
@@ -1162,52 +1194,329 @@ sub output_in {
 
 Whether a Bash command runs C<kill>, C<pkill>, C<killall> or C<pgrep>, at its
 start, after a separator, after C<sudo> or C<xargs>, or in a command
-substitution.  Text in the body of a heredoc does not count.
+substitution.  Text in quotes or in the body of a heredoc does not count.
 
 =cut
 
 sub is_signal {
     my ($command) = @_;
-    return without_heredocs($command) =~ $SIGNAL_RX;
+    return bare_command($command) =~ $SIGNAL_RX;
 }
 
 =head2 $bool = is_copy($command)
 
 Whether a Bash command runs C<rsync> or C<dd>, C<cp> with C<-r>, C<-R> or
 C<-a>, C<scp -r>, or a C<tar> that extracts, at its start, after a separator,
-after C<sudo> or C<xargs>, or in a command substitution.  Text in the body of
-a heredoc does not count.
+after C<sudo> or C<xargs>, or in a command substitution.  Text in quotes or in
+the body of a heredoc does not count.
 
 =cut
 
 sub is_copy {
     my ($command) = @_;
-    return without_heredocs($command) =~ $COPY_RX;
+    return bare_command($command) =~ $COPY_RX;
 }
 
-=head2 $command = without_heredocs($command)
+=head2 @commands = shell_commands($command)
 
-C<$command> with the body of each heredoc taken out.  The line that starts a
-heredoc stays, and so does its terminator line.  A body is data that goes to
-a command, and not a command that the shell runs.
+The simple commands of a Bash command, in the order that they start.  Each is
+a hash of three lists:
+
+=over
+
+=item words
+
+Its words.  Each is a hash of C<text>, the word as the program gets it, with
+its quotes and escapes taken out, and C<bare>, the same word with a NUL for
+each character that was quoted or escaped.  A gate matches the bare words, so
+text in quotes, such as a C<< > >>, a C<;> or the name of a program, is not
+read as shell syntax.
+
+=item writes
+
+The files that its redirections write.  C<< 2>&1 >> writes no file, and
+C<< 2>/dev/null >> writes F</dev/null> and no other file.
+
+=item input
+
+The body of each heredoc that it reads, and each here string.  A body is data
+for the command, and not a command that the shell runs.  But it is the program
+of C<python3 -> or C<perl ->, so it counts for a command that writes.
+
+=back
+
+A command substitution, a process substitution, and each command inside
+brackets, is a command of its own.  What a substitution prints is not known,
+so it adds nothing to the word that it is in.  A C<#> at the start of a word
+starts a comment.  The end of the text ends whatever is still open, so a
+command that the shell refuses is read as far as it goes.
 
 =cut
 
-sub without_heredocs {
+sub shell_commands {
     my ($command) = @_;
 
-    my ( @kept, @ends );
-    foreach my $line ( split m/(?<=\n)/, $command ) {
-        if (@ends) {
-            next if $line !~ m/\A\s*\Q$ends[0]\E\s*\z/;
-            shift @ends;
-        }
-        push @kept, $line;
-
-        # <<< is a here string, and << between numbers is a shift.
-        push @ends, $2 while $line =~ m/(?<!<)<<(?!<)-?\s*(['"]?)([A-Za-z_][\w.-]*)\1/g;
+    my $parse = { text => $command, commands => [], frames => [], heredocs => [], simple => shell_simple() };
+    pos( $parse->{text} ) = 0;
+    while ( pos( $parse->{text} ) < length $parse->{text} ) {
+        if   ( shell_frame($parse) eq q{"} ) { shell_quoted_token($parse) }
+        else                                 { shell_token($parse) }
     }
-    return join q{}, @kept;
+    while ( my $frame = $parse->{frames}[-1] ) {
+        if   ( $frame->{outer} ) { shell_close($parse) }
+        else                     { pop @{ $parse->{frames} } }
+    }
+    shell_end_command($parse);
+    return @{ $parse->{commands} };
+}
+
+=head2 shell_token(\%parse)
+
+Reads one token outside double quotes, and does what C<%SHELL_ACTION> says
+for it.  An escape adds its character, quoted.  Blanks end a word, a C<#> at
+the start of a word skips to the end of the line, and anything else is part
+of a word.
+
+=cut
+
+sub shell_token {
+    my ($parse) = @_;
+    $parse->{text} =~ m/$SHELL_TOKEN_RX/gc;
+    my $token = $1;
+
+    if ( my $action = $SHELL_ACTION{$token} ) { return $action->( $parse, $token ) }
+    return shell_add( $parse, $1, 1 ) if $token =~ m/\A\\(.)\z/s;
+    return shell_end_word($parse)     if $token =~ m/\A[ \t]/;
+    if ( !$parse->{word} && $token =~ m/\A#/ ) {
+        $parse->{text} =~ m/\G[^\n]*/gc;
+        return;
+    }
+    return shell_add( $parse, $token, 0 );
+}
+
+=head2 shell_quoted_token(\%parse)
+
+Reads one token inside double quotes.  Everything there is quoted, but for a
+command substitution, which starts a command of its own, and the closing
+quote.  A backslash escapes only a C<$>, a backquote, a quote, a backslash or
+a newline, and is kept before anything else.
+
+=cut
+
+sub shell_quoted_token {
+    my ($parse) = @_;
+    $parse->{text} =~ m/$QUOTED_TOKEN_RX/gc;
+    my $token = $1;
+
+    return pop @{ $parse->{frames} } if $token eq q{"};
+    return shell_open( $parse, $token ) if $token eq '$(' || $token eq '`';
+    return shell_add( $parse, $1 eq "\n" ? q{} : $1, 1 ) if $token =~ m/\A\\(.)\z/s;
+    return shell_add( $parse, $token, 1 );
+}
+
+=head2 $simple = shell_simple()
+
+A new simple command, with no words, writes or input.
+
+=cut
+
+sub shell_simple {
+    return { words => [], writes => [], input => [] };
+}
+
+=head2 $kind = shell_frame(\%parse)
+
+What the parse is inside: C<">, C<$(>, a backquote, C<(>, or the empty
+string at the top.
+
+=cut
+
+sub shell_frame {
+    my ($parse) = @_;
+    my $frame = $parse->{frames}[-1] // return q{};
+    return $frame->{kind};
+}
+
+=head2 shell_add(\%parse, $text, $quoted)
+
+Adds C<$text> to the word being read, and starts one when there is none.  An
+empty C<$text> starts a word, as C<''> does.
+
+=cut
+
+sub shell_add {
+    my ( $parse, $text, $quoted ) = @_;
+    my $word = $parse->{word} //= { text => q{}, bare => q{} };
+    $word->{text} .= $text;
+    $word->{bare} .= $quoted ? "\0" x length $text : $text;
+    return;
+}
+
+=head2 shell_end_word(\%parse)
+
+Ends the word being read.  It is a word of the command, or the file, the
+delimiter or the string that the last redirection takes.
+
+=cut
+
+sub shell_end_word {
+    my ($parse) = @_;
+    my $word = delete $parse->{word} // return;
+    my $op   = delete $parse->{redirect};
+    my $simple = $parse->{simple};
+
+    if ( !defined $op ) {
+        push @{ $simple->{words} }, $word;
+    }
+    elsif ( $op =~ $WRITE_REDIRECT_RX || ( $op eq '>&' && $word->{text} !~ $DESCRIPTOR_RX ) ) {
+        push @{ $simple->{writes} }, $word->{text};
+    }
+    elsif ( $op =~ m/\A<<-?\z/ && $word->{text} =~ $HEREDOC_END_RX ) {
+        push @{ $parse->{heredocs} }, [ $simple, $word->{text} ];
+    }
+    elsif ( $op eq '<<<' ) {
+        push @{ $simple->{input} }, $word->{text};
+    }
+    return;
+}
+
+=head2 shell_end_command(\%parse)
+
+Ends the command being read, and keeps it if it has a word or writes a file.
+
+=cut
+
+sub shell_end_command {
+    my ($parse) = @_;
+    shell_end_word($parse);
+    delete $parse->{redirect};
+    my $simple = $parse->{simple};
+    push @{ $parse->{commands} }, $simple if @{ $simple->{words} } || @{ $simple->{writes} };
+    $parse->{simple} = shell_simple();
+    return;
+}
+
+=head2 shell_redirect(\%parse, $op)
+
+Starts the redirection C<$op>.  The digits of a word just before it, as in
+C<< 2> >>, name a descriptor, and are not a word.
+
+=cut
+
+sub shell_redirect {
+    my ( $parse, $op ) = @_;
+    my $word = $parse->{word};
+    if   ( $word && $word->{bare} =~ m/\A\d+\z/ ) { delete $parse->{word} }
+    else                                          { shell_end_word($parse) }
+    $parse->{redirect} = $op;
+    return;
+}
+
+=head2 shell_open(\%parse, $kind)
+
+Starts a substitution of C<$kind>, a C<$(> or a backquote, whose commands are
+commands of their own.  The command and the word around it wait for its end.
+
+=cut
+
+sub shell_open {
+    my ( $parse, $kind ) = @_;
+    push @{ $parse->{frames} }, { kind => $kind, outer => [ @{$parse}{qw{simple word redirect}} ] };
+    delete @{$parse}{qw{word redirect}};
+    $parse->{simple} = shell_simple();
+    return;
+}
+
+=head2 shell_close(\%parse)
+
+Ends the substitution that the parse is inside, and goes back to the command
+and the word around it.  It adds nothing to that word, but starts it.
+
+=cut
+
+sub shell_close {
+    my ($parse) = @_;
+    shell_end_command($parse);
+    @{$parse}{qw{simple word redirect}} = @{ pop( @{ $parse->{frames} } )->{outer} };
+    shell_add( $parse, q{}, 1 );
+    return;
+}
+
+=head2 shell_close_bracket(\%parse)
+
+A C<)> ends a C<$(> that the parse is inside, or else the command, and the
+bracket that it is inside if there is one.
+
+=cut
+
+sub shell_close_bracket {
+    my ($parse) = @_;
+    my $in = shell_frame($parse);
+    return shell_close($parse) if $in eq '$(';
+    shell_end_command($parse);
+    pop @{ $parse->{frames} } if $in eq '(';
+    return;
+}
+
+=head2 shell_bodies(\%parse)
+
+Reads the body of each heredoc that the line just ended starts, in order, and
+gives it to the command that reads it.  One with no terminator runs to the
+end of the text.
+
+=cut
+
+sub shell_bodies {
+    my ($parse) = @_;
+    while ( my $heredoc = shift @{ $parse->{heredocs} } ) {
+        my ( $reader, $end ) = @$heredoc;
+        my $body = q{};
+        if    ( $parse->{text} =~ m/\G(.*?)^[ \t]*\Q$end\E[ \t]*(?:\n|\z)/gcms ) { $body = $1 }
+        elsif ( $parse->{text} =~ m/\G(.+)/gcs )                                   { $body = $1 }
+        push @{ $reader->{input} }, $body;
+    }
+    return;
+}
+
+=head2 $text = bare_text(\@words)
+
+The bare form of C<@words>, a list of words from
+C<shell_commands>, joined with a space.
+
+=cut
+
+sub bare_text {
+    my ($words) = @_;
+    return join q{ }, map { $_->{bare} } @$words;
+}
+
+=head2 $text = bare_command($command)
+
+The bare words of each command of the Bash C<$command>, with a newline after
+each command but the last.  So text in quotes or in the body of a heredoc is
+not read as a command, and a pattern that starts at C<$COMMAND_START_RX>
+finds each command.
+
+=cut
+
+sub bare_command {
+    my ($command) = @_;
+    return join "\n", map { bare_text( $_->{words} ) } shell_commands($command);
+}
+
+=head2 $words = words_after(\@words, $rx)
+
+The words of one command that come after the first match of C<$rx> against
+C<bare_text>, or undef when it does not match.
+
+=cut
+
+sub words_after {
+    my ( $words, $rx ) = @_;
+    bare_text($words) =~ $rx or return;
+    my ( $at, $i ) = ( $+[0], 0 );
+    $at -= length( $words->[ $i++ ]{bare} ) + 1 while $i < @$words && $at > 0;
+    return [ @{$words}[ $i .. $#$words ] ];
 }
 
 =head2 $dir = command_dir($command, $cwd)
@@ -1221,7 +1530,7 @@ second line is as real as one on the first -- and while only the first was
 matched, a commit after a heredoc was judged against whatever directory the
 shell happened to be in rather than the repository it names.
 
-A C<cd> in the body of a heredoc is data, so it is taken out first.
+A C<cd> in the body of a heredoc is data, so it does not count.
 
 =cut
 
@@ -1229,31 +1538,41 @@ sub command_dir {
     my ( $command, $cwd ) = @_;
     $cwd //= Cwd::getcwd();
 
-    my $said = without_heredocs($command);
-
-    my ($dir) = $said =~ m/\bgit\s+-C\s+("[^"]+"|'[^']+'|\S+)/;
-    if ( !defined $dir ) {
-        while ( $said =~ m/${COMMAND_START_RX}cd\s+("[^"]+"|'[^']+'|\S+)/g ) { $dir = $1 }
+    my ( $git, $cd );
+    foreach my $words ( map { $_->{words} } shell_commands($command) ) {
+        my $after = words_after( $words, qr/\bgit\s+-C(?!\S)/ );
+        $git //= $after->[0] if $after;
+        $after = words_after( $words, qr/${COMMAND_START_RX}cd(?!\S)/ );
+        $cd = $after->[0] if $after && @$after;
     }
-    return $cwd if !defined $dir;
-    $dir =~ s/\A(["'])(.*)\1\z/$2/;
-    $dir =~ s{\A~(?=/|\z)}{$ENV{HOME} // q{~}}e;
+    my $named = $git // $cd // return $cwd;
+
+    my $dir = $named->{text};
+    $dir =~ s{\A~(?=/|\z)}{$ENV{HOME} // q{~}}e if $named->{bare} =~ m/\A~/;
     return File::Spec->file_name_is_absolute($dir) ? $dir : File::Spec->catdir( $cwd, $dir );
 }
 
 =head2 @files = written_perl_files($command, $dir)
 
-The Perl files that a Bash command names, when it writes anything at all,
-relative to C<$dir>.
+The Perl files that a Bash command writes, relative to C<$dir>: the file of
+each redirection that writes one, and each Perl file that a command which
+writes names, in its words or in what it reads.  A command that only reads
+writes nothing, whatever its quoted arguments say.
 
 =cut
 
 sub written_perl_files {
     my ( $command, $dir ) = @_;
-    return if $command !~ $WRITES_RX;
+
+    my @named;
+    foreach my $simple ( shell_commands($command) ) {
+        push @named, @{ $simple->{writes} };
+        next if bare_text( $simple->{words} ) !~ $WRITES_RX;
+        push @named, ( map { $_->{text} } @{ $simple->{words} } ), @{ $simple->{input} };
+    }
 
     my %seen;
-    my @files = grep { !$seen{$_}++ } $command =~ m{((?:[\w.~/-]+/)?[\w.-]+[.](?:pm|pl|t|psgi))\b}g;
+    my @files = grep { !$seen{$_}++ } map { m{((?:[\w.~/-]+/)?[\w.-]+[.](?:pm|pl|t|psgi))\b}g } @named;
     return map { File::Spec->file_name_is_absolute($_) ? $_ : File::Spec->catfile( $dir, $_ ) } @files;
 }
 

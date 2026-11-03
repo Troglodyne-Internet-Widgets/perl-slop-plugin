@@ -165,6 +165,32 @@ subtest 'a Bash command that writes Perl waits for reading-perl too' => sub {
     is( run_bash( "perl -Mlib=x $root/lib/Foo.pm", $none ), undef, 'and perl -Mlib, whose i is in the argument of -M' );
     is( run_bash( "cd $root && prove -l t/",      $none ), undef, 'and so does prove' );
     is( run_bash( "perltidy -b $root/lib/Foo.pm", $none ), undef, 'perltidy changes layout, and is left alone' );
+
+    # A > or a | inside quotes is text, and not a redirect or a pipe.
+    is( run_bash( "sed -n '/^sub args/,/^}/p' $root/lib/Foo.pm | grep -n 'required\\|=> *{' | head -30", $none ), undef, 'a > inside single quotes is not a redirect' );
+    is( run_bash( qq{grep -n "required\\|plugins *=>\\|x" $root/lib/Foo.pm | head -30},                  $none ), undef, 'nor one inside double quotes' );
+    is( run_bash( "grep -n \\> $root/lib/Foo.pm",                                                      $none ), undef, 'nor an escaped one' );
+    is( run_bash( "perldoc -T $root/lib/Foo.pm 2>/dev/null | sed -n 1,200p",                           $none ), undef, 'a redirect of stderr writes /dev/null, and no other file on the line' );
+    is( run_bash( "perl -c $root/lib/Foo.pm >/dev/null 2>&1",                                           $none ), undef, 'and so do >/dev/null and 2>&1' );
+    is( run_bash( "grep -n python $root/lib/Foo.pm",                                                    $none ), undef, 'a writer named as an argument writes nothing' );
+    is( run_bash( "grep -n 'x; sed -i y' $root/lib/Foo.pm",                                             $none ), undef, 'and nor does one inside quotes' );
+    is( run_bash( "grep -n x README.md # > $root/lib/Foo.pm",                                           $none ), undef, 'nor a > in a comment' );
+    is( run_bash( qq{grep -n "x > $root/lib/Foo.pm},                                                      $none ), undef, 'nor one in quotes that do not end' );
+
+    like( run_bash( "echo x > $root/lib/Foo.pm",  $none ), qr/reading-perl/, 'a real > still writes' );
+    like( run_bash( "echo x >> $root/lib/Foo.pm", $none ), qr/reading-perl/, 'and so does >>' );
+    like( run_bash( "echo x >$root/lib/Foo.pm",   $none ), qr/reading-perl/, 'and a > with no blank before its file' );
+    like( run_bash( "echo 'a > b' > $root/lib/Foo.pm", $none ), qr/reading-perl/, 'and a > after a quoted one' );
+    like( run_bash( "sed -i 's/a/b/' \"$root/lib/Foo.pm\"", $none ), qr/reading-perl/, 'a file in quotes is still written' );
+    like( run_bash( "grep -n x README.md; perl -pi -e 's/x/y/' $root/lib/Foo.pm", $none ), qr/reading-perl/, 'and so is one after a command that only reads' );
+    like( run_bash( qq{python3 <<< "open('$root/lib/Foo.pm', 'w')"}, $none ), qr/reading-perl/, 'and one that a here string tells python to write' );
+    like( run_bash( qq{echo "\$(sed -i s/a/b/ $root/lib/Foo.pm)"}, $none ), qr/reading-perl/, 'and one that a command substitution writes' );
+    like( run_bash( "bogus-wrapper run sed -i s/a/b/ $root/lib/Foo.pm", $none ), qr/reading-perl/, 'and one that sed -i writes after a wrapper that the hook does not know' );
+    like( run_bash( "find $root/lib -exec sed -i s/a/b/ $root/lib/Foo.pm \\;", $none ), qr/reading-perl/, 'and one that find runs a writer on' );
+
+    my $why = run_bash( "cat $root/lib/Foo.pm > $root/t/new.t", $none );
+    like( $why, qr{t/new[.]t}, 'a redirect names its file' );
+    unlike( $why, qr{Foo[.]pm}, 'and not the file that the command reads' );
 };
 
 subtest 'a commit of Perl waits for the finishing skills, loaded since the last commit' => sub {
@@ -250,6 +276,11 @@ subtest 'what a commit is judged by' => sub {
     # cd is.  Only a cd at the start of the whole command used to count, so a
     # commit after a heredoc was judged against the wrong repository.
     like( run_bash( "cat <<EOF\nwords\nEOF\ncd $untracked\ngit commit -m x", transcript() ), qr/data-perl/, 'a cd after a heredoc still says which repository' );
+
+    # A ; or a << inside quotes is text, and does not start a command or a heredoc.
+    is( run_bash( "cd $untracked && grep -n 'x; git commit' README.md", transcript() ), undef, 'a git commit inside quotes is not a commit' );
+    like( run_bash( "grep -c '<<EOF' README.md\ncd $untracked && git commit -m x", transcript() ), qr/data-perl/, 'and a << inside quotes does not start a heredoc' );
+    like( run_bash( qq{cd "$untracked" && git commit -m x}, transcript() ), qr/data-perl/, 'a cd to a quoted directory says which repository' );
 };
 
 subtest 'a post to an issue or a pull request waits for information-security' => sub {
@@ -284,6 +315,7 @@ subtest 'a pull request to another repository waits for pull-requests' => sub {
     }
     is( run_bash( 'gh pr create --repo O/R --title x -a @me', $prose ), undef, 'a --repo that is origin, in any case, is allowed' );
     is( run_bash( 'gh pr create --head fix --title x -a @me', $prose ), undef, 'and so is a --head with no owner' );
+    is( run_bash( 'gh pr create --title "see -H me:fix" -a @me', $prose ), undef, 'and a --head inside a quoted title' );
     is( run_bash( 'gh pr create --title x -a @me',            $prose ), undef, 'and a pull request that gh makes against origin' );
     is( run_bash( 'gh pr view -R up/r 3',                   $prose ), undef, 'gh pr that does not create is allowed' );
     is( run_bash( "cat <<EOF\ngh pr create -R up/r\nEOF\n", $prose ), undef, 'and so is gh pr create in the body of a heredoc' );
@@ -357,6 +389,8 @@ subtest 'a command that signals a process waits for killing-processes' => sub {
     is( run_bash( 'git log --grep=kill',         $none ), undef, 'and so is kill as a word inside another command' );
     is( run_bash( 'systemctl kill-mode',         $none ), undef, 'and kill as part of a longer word' );
     is( run_bash( "cat <<EOF\nkill 1234\nEOF\n", $none ), undef, 'and kill in the body of a heredoc' );
+    is( run_bash( q{grep -n "a|kill" x.txt},         $none ), undef, 'and kill after a | inside quotes' );
+    like( run_bash( "echo ')' && kill 1", $none ), qr/killing-processes/, 'but not a kill after a quoted bracket' );
     like( run_bash( 'gh pr create --title x --body y && kill 1', transcript( skill( 's1', $PROSE ) ) ), qr/killing-processes/, 'a post that also kills waits for both' );
 };
 
@@ -541,6 +575,31 @@ subtest 'a prompt gets reminders of information-security, and of profiling-perl 
     ok( !$ask->( 'Run it thru the perl debugger', transcript( skill( 's0', $PROSE ), skill( 's1', 'perl-slop:debugging-perl' ) ) ), 'not when the skill is loaded' );
     ok( !$ask->( 'rename the sub that builds it', $prose ), 'nor for a prompt about something else' );
     ok( !$ask->( 'make a PR to main',           $prose ), 'nor for one to the main branch' );
+};
+
+subtest 'shell_commands reads a command as bash does' => sub {
+
+    # Each command as its words, the files that it writes, and what it reads.
+    my $read = sub {
+        my ($command) = @_;
+        return [ map { [ [ map { $_->{text} } @{ $_->{words} } ], $_->{writes}, $_->{input} ] } PerlSlop::SkillGates::shell_commands($command) ];
+    };
+
+    is_deeply( $read->(q{a 'b > c' "d; e" f\ g}), [ [ [ 'a', 'b > c', 'd; e', 'f g' ], [], [] ] ], 'quotes and escapes join a word, and are not syntax' );
+    is_deeply( $read->(q{a "x\"y\$z" "\q"}), [ [ [ 'a', 'x"y$z', '\q' ], [], [] ] ], 'and an escape inside double quotes takes only a quote, a $, a backquote or a backslash' );
+    is_deeply( $read->("a \\\nb"), [ [ [qw{a b}], [], [] ] ], 'a line continuation joins two lines into one command' );
+    is_deeply( $read->('a 2>/dev/null >>f 2>&1 >&g <in'), [ [ ['a'], [qw{/dev/null f g}], [] ] ], 'a redirection writes its file, and 2>&1 writes none' );
+    is_deeply( $read->('a | b && (c; d) || x `e`'), [ [ ['a'], [], [] ], [ ['b'], [], [] ], [ ['c'], [], [] ], [ ['d'], [], [] ], [ ['e'], [], [] ], [ [ 'x', q{} ], [], [] ] ], 'pipes, lists, brackets and backquotes each start a command' );
+    is_deeply( $read->('a "x$(b "c)")y" z'), [ [ ['b', 'c)'], [], [] ], [ [ 'a', 'xy', 'z' ], [], [] ] ], 'a substitution inside quotes is a command, and adds nothing to its word' );
+    is_deeply( $read->("a <<E; b <<-'F'\none\nE\n\ttwo\n\tF\nc"), [ [ ['a'], [], ["one\n"] ], [ ['b'], [], ["\ttwo\n"] ], [ ['c'], [], [] ] ], 'each heredoc body goes to the command that reads it' );
+    is_deeply( $read->("a <<E\nnever ends"), [ [ ['a'], [], ['never ends'] ] ], 'and a body with no terminator runs to the end' );
+    is_deeply( $read->("echo \$((1<<2))\nb"), [ [ [ 'echo', q{} ], [], [] ], [ ['b'], [], [] ] ], 'a << before a number is a shift, and starts no heredoc' );
+    is_deeply( $read->("a # b > c\nd"), [ [ ['a'], [], [] ], [ ['d'], [], [] ] ], 'a # at the start of a word starts a comment to the end of the line' );
+    is_deeply( $read->('a "$(b'), [ [ ['b'], [], [] ], [ [ 'a', q{} ], [], [] ] ], 'the end of the text closes what is still open' );
+
+    local $ENV{HOME} = '/bogus/home';
+    is( PerlSlop::SkillGates::command_dir( 'cd ~/x && git status',   '/bogus' ), '/bogus/home/x', 'command_dir expands a ~ that is not quoted' );
+    is( PerlSlop::SkillGates::command_dir( q{cd '~/x' && git status}, '/bogus' ), '/bogus/~/x',    'and leaves a quoted one alone' );
 };
 
 subtest 'the hook as Claude Code runs it' => sub {

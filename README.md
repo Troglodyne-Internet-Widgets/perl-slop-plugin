@@ -29,6 +29,7 @@ apply to every project, Perl or not.
   command that writes a file, the gate applies only to a Perl file, as in the
   next item.  The hook finds the files that a command writes by their Perl
   names.  A gate on every redirect also refuses `2>&1`, so there is none.
+  A redirect writes only its own file, so `2>/dev/null` writes no Perl file.
 - Before an edit to a Perl file, `perl-slop:reading-perl` too.  This covers
   the Edit and Write tools, and a Bash command that writes a Perl file with
   `sed -i`, `perl -i`, `python3`, a redirect, `tee`, `cp`, `mv`, `install` or
@@ -94,7 +95,9 @@ apply to every project, Perl or not.
   program did.  The debugger answers that, and more reading does not.
 
 A `git commit`, `gh` or `glab` in the body of a heredoc is data, and does not
-count as a command.
+count as a command.  Neither does text in quotes: a `>`, a `;` or the name of
+a program inside quotes is not shell syntax, so `grep 'x => y' lib/Foo.pm`
+only reads.
 
 A skill counts when it is loaded after the last compaction, because a
 compaction takes it out of the model's context.
