@@ -1,0 +1,42 @@
+# What every distribution of the packaging-perl skill has, whatever perl it
+# runs on.  It names no perlcritic profile, because the perl decides which, so a
+# distribution picks troglodyne-5.040 or troglodyne-compat.
+name: troglodyne
+description: The build, agent harness and tools of every troglodyne distribution
+variables:
+  VERSION: '0.001'
+checks:
+  # Before ClaudeMd, which runs after it by name and only reads the file.
+  AgentInstructions:
+    module: ToolConfiguration
+    files:
+      CLAUDE.md: templates/CLAUDE.md
+  ClaudeMd:
+    file: CLAUDE.md
+    template: templates/CLAUDE.md
+    mentions:
+      - perl-slop:reading-perl
+  Distribution:
+    module: ToolConfiguration
+    files:
+      dist.ini: templates/dist.ini
+      weaver.ini: templates/weaver.ini
+      Changes: templates/Changes
+      prereqs.yml: templates/prereqs.yml
+      LICENSE: templates/LICENSE
+      .gitignore: templates/gitignore
+      .mailmap: templates/mailmap
+  ToolConfiguration:
+    files:
+      .perltidyrc: templates/perltidyrc
+      .preferred_modules.ini: templates/preferred_modules.ini
+      .pod_stopwords: templates/pod_stopwords
+      .tests-covering-map.pl: templates/tests-covering-map.pl
+  GitHooks:
+    directory: git-hooks
+    hooks:
+      pre-commit: templates/pre-commit
+      post-commit: templates/post-commit
+    differ: info
+    replace: false
+    install: true
