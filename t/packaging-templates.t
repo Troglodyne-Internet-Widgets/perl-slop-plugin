@@ -447,7 +447,7 @@ subtest 'both profiles turn on the call reports of the Stricter policy' => sub {
         like( $section, qr/^report_unresolved_calls\s*=\s*1$/m,  "and reports a call that it cannot read in a list function block" );
         like( $section, qr/^report_postfix_for_calls\s*=\s*1$/m, "and a call before a postfix for" );
     }
-    like( $dist, qr/authordep\s+Perl::Critic::Policy::ControlStructures::ProhibitMutatingListFunctionsStricter\s+=\s+0[.]002$/m, 'dist.ini asks for the version that has the options' );
+    like( $dist, qr/authordep\s+Perl::Critic::Policy::ControlStructures::ProhibitMutatingListFunctionsStricter\s+=\s+0[.]003$/m, 'dist.ini asks for the version that judges a call only where $_ is the caller\'s' );
 };
 
 # Each packaging-perl eval counts the policy sections of the .perlcriticrc that

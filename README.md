@@ -113,6 +113,12 @@ is one character of a name.
 A `before_commit` entry applies to any changed file that matches it, Perl or
 not.
 
+The hooks ignore a key that they do not read, so a misspelled gate turns its
+rule off without a word. `conformance check` with a flavor of the
+packaging-perl skill fails such a key. The check is `PerlSlopConfig` in
+`skills/packaging-perl/conformance/troglodyne.yml`, and the schema there lists
+the keys that the hooks read.
+
 These skills are usually project skills in the `.claude/skills` directory of
 the same repository. Claude Code registers project skills only for a session
 that starts in that repository, or that adds it with `/add-dir`. So in any
