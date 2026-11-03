@@ -402,7 +402,7 @@ subtest 'what the profiles read is scaffolded and shipped' => sub {
 
     # Every policy outside Perl::Critic's own distribution needs a line, or a
     # fresh clone cannot install what the profile names.
-    foreach my $policy ( 'ProhibitPrintSTDERR', 'Variables::ProhibitUnusedVarsStricter', 'RegularExpressions::PreventUselessMetacharacterEscapes', 'ValuesAndExpressions::ProhibitLiteralArithmetic' ) {
+    foreach my $policy ( 'ProhibitPrintSTDERR', 'Variables::ProhibitUnusedVarsStricter', 'RegularExpressions::PreventUselessMetacharacterEscapes', 'ValuesAndExpressions::ProhibitLiteralArithmetic', 'RegularExpressions::ProhibitIneffectiveModifiers', 'RegularExpressions::ProhibitRegexToSplitAtDelimiter' ) {
         like( $dist, qr/authordep\s+Perl::Critic::Policy::\Q$policy\E/, "dist.ini declares the authordep for $policy" );
     }
 
@@ -424,6 +424,17 @@ subtest 'the preferred modules prefer Readonly to use constant' => sub {
     ok( defined $section, 'the template has a [constant] section' ) or return;
     like( $section, qr/^prefer\s*=\s*Readonly\s*$/m, 'and it prefers Readonly' );
     like( $section, qr/^reason\s*=/m,                  'and says why' );
+};
+
+# Carp adds the file and line to a message that ends in a newline, so the
+# reader gets them whether the author wanted them or not.  A ban has no prefer
+# line, because the answer is die and not another module.
+subtest 'the preferred modules ban Carp' => sub {
+    my $ini = slurp("$TEMPLATES/preferred_modules.ini");
+    my ($section) = $ini =~ m/^\[Carp\]\n((?:[^\[\n][^\n]*\n)*)/m;
+    ok( defined $section, 'the template has a [Carp] section' ) or return;
+    unlike( $section, qr/^prefer\s*=/m, 'and names no module to use instead' );
+    like( $section, qr/^reason\s*=.*\bdie\b/m, 'and says to die instead' );
 };
 
 # Each packaging-perl eval counts the policy sections of the .perlcriticrc that

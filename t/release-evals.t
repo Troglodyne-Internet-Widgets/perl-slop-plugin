@@ -63,6 +63,9 @@ needs.
 =item * perlcritic, with its profile, reports C<use constant> and names
 Readonly, which is what F<.preferred_modules.ini> is for.
 
+=item * perlcritic, with its profile, reports C<use Carp>, which F<.preferred_modules.ini>
+bans.
+
 =back
 
 C<--keep-temp> keeps each run's directory, and the distribution is under
@@ -173,6 +176,12 @@ sub check_distribution {
     close($fh) or die "$dist: $!";
     my ($preferred) = $sandboxed->( $dist, {}, qw{perlcritic --profile .perlcriticrc --single-policy PreferredModules --verbose %m\n zz-constant.pl} );
     like( $preferred, qr/Readonly/, "$label: and its profile steers use constant to Readonly" );
+
+    open( $fh, '>', "$dist/zz-carp.pl" ) or die "$dist: $!";
+    print {$fh} "use strict;\nuse warnings;\nuse Carp ();\nCarp::croak(qq{no\\n});\n";
+    close($fh) or die "$dist: $!";
+    my ($carp) = $sandboxed->( $dist, {}, qw{perlcritic --profile .perlcriticrc --single-policy PreferredModules --verbose %m\n zz-carp.pl} );
+    like( $carp, qr/\bCarp\b/, "$label: and it reports use Carp" );
 
     # The run's directory is removed after this, so a distribution that failed
     # a check is kept where it can be read.
