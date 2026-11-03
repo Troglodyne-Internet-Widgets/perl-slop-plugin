@@ -70,6 +70,10 @@ bans.
 and a sub call before a postfix C<for>, the two options of
 ProhibitMutatingListFunctionsStricter that the profile turns on.
 
+=item * perlcritic, with its profile, reports a nested read such as
+C<$h{a}{b}> where C<no autovivification> is not in scope, and not in a block
+where it is.
+
 =back
 
 C<--keep-temp> keeps each run's directory, and the distribution is under
@@ -193,6 +197,15 @@ sub check_distribution {
     close($fh) or die "$dist: $!";
     my ($topic) = $sandboxed->( $dist, {}, qw{perlcritic --profile .perlcriticrc --nocolor --single-policy ProhibitMutatingListFunctionsStricter --verbose %l\n zz-topic.pl} );
     is( join( q{ }, sort { $a <=> $b } $topic =~ m/^(\d+)$/mg ), '3 4', "$label: and it reports calls while \$_ is the caller's element, in map and before a postfix for" );
+
+    # A nested read with no pragma, then the same read in a block that has it.
+    open( $fh, '>', "$dist/zz-autoviv.pl" ) or die "$dist: $!";
+    print {$fh} "use strict;\nuse warnings;\nmy \%h;\nmy \$x = \$h{a}{b};\n{\n    no autovivification;\n    my \$y = \$h{c}{d};\n}\n";
+    close($fh) or die "$dist: $!";
+    # The whole profile, because --single-policy runs a policy that the profile
+    # does not enable.
+    my ($autoviv) = $sandboxed->( $dist, {}, qw{perlcritic --profile .perlcriticrc --nocolor --verbose %l:%p\n zz-autoviv.pl} );
+    is( join( q{ }, $autoviv =~ m/^(\d+):Variables::RequireNoAutovivification$/mg ), '4', "$label: and it reports a nested read only where no autovivification is not in scope" );
 
     # The run's directory is removed after this, so a distribution that failed
     # a check is kept where it can be read.

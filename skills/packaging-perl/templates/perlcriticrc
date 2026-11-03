@@ -277,5 +277,8 @@ allow_unused_subroutine_arguments = 1
 [Variables::ProhibitTopicIterator]
 [Variables::RequireLocalizedPunctuationVars]
 [Variables::RequireNegativeIndices]
+# A read through a missing level, such as $h{a}{b}, creates $h{a}.  Write
+# no autovivification; in the scope, which [AutoPrereqs] then declares.
+[Variables::RequireNoAutovivification]
 # Extensions to perl -c
 [CompileTime]
