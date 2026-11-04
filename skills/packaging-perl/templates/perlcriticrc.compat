@@ -59,6 +59,7 @@ strict = 1
 [ValuesAndExpressions::ProhibitDefinedBeforeLength]
 [Variables::ProhibitUselessVarClearing]
 [Subroutines::ProhibitTailRecursion]
+[ValuesAndExpressions::ProhibitDescendingRanges]
 [Bangs::ProhibitUselessRegexModifiers]
 [RegularExpressions::ProhibitIneffectiveModifiers]
 [Bangs::ProhibitCommentedOutCode]
