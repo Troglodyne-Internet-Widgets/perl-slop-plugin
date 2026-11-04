@@ -451,9 +451,6 @@ subtest 'both profiles turn on the call reports of the Stricter policy' => sub {
     like( $dist, qr/authordep\s+Perl::Critic::Policy::ControlStructures::ProhibitMutatingListFunctionsStricter\s+=\s+0[.]003$/m, 'dist.ini asks for the version that judges a call only where $_ is the caller\'s' );
 };
 
-# Each packaging-perl eval counts the policy sections of the .perlcriticrc that
-# Claude wrote, against the profile its floor picks.  A template that gains or
-# loses a policy has to move that count too, or the eval fails at release time.
 subtest 'the version dzil stamps is not code above use strict' => sub {
 
     # PkgVersion inserts a $VERSION line after the package line unless it is told
