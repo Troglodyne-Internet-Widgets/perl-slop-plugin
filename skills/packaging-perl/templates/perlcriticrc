@@ -16,12 +16,8 @@
 #   InputOutput::ProhibitBarewordDirHandles       5.038
 #   Modules::RequireEndWithOne                  module_true from 5.038
 #
-# Two more go the same way at 5.042, and are named below because this file
-# assumes only 5.040.  Once your floor is 5.041 or later, which selects the
-# 5.042 bundle, turn them off: replace each section with its [-Name] form, such
-# as [-CodeLayout::RequireASCII].  Do not delete the sections, because
-# conformance reports a policy of this template that a profile neither enables
-# nor turns off:
+# Two more go the same way at 5.042.  They stay below because this file assumes
+# only 5.040, and at a later floor they report nothing, so they cost nothing:
 #
 #   Variables::ProhibitPerl4PackageNames        no apostrophe as a package
 #                                                 separator from 5.042
@@ -40,9 +36,8 @@ allow-unsafe = 1
 [Documentation::RequirePod]
 # Security
 [ValuesAndExpressions::PreventSQLInjection]
-# Turn this one off at 5.041 and later.  It also applies to POD, where the only
-# thing it tends to catch is a contributor's name in the section Dist::Zilla
-# generates, and spelling somebody's name wrong is not a code standard.
+# It also applies to POD, where the only thing it tends to catch is a
+# contributor's name in the section that Dist::Zilla generates.
 [CodeLayout::RequireASCII]
 [RegularExpressions::RequireDefault]
 strict = 1
@@ -264,7 +259,6 @@ exclude_functions = print
 # is given variables to prohibit, and nobody has named any.
 [Variables::ProhibitLocalVars]
 [Variables::ProhibitMatchVars]
-# Drop this one at 5.041 and later, with RequireASCII above.
 [Variables::ProhibitPerl4PackageNames]
 [Variables::ProhibitReusedNames]
 # Stricter than the core ProhibitUnusedVariables, which reports only a bare
