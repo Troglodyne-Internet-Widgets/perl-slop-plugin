@@ -46,6 +46,14 @@ arrived in 5.14, so a lower declaration is one the code does not keep. Nothing
 older is worth the effort either: a perl before 5.14 is a box somebody is paying
 to keep alive, and supporting it is their bill.
 
+If the person does not know, decide by what the distribution is. An application
+or a service usually runs where its owner controls the perl, so it takes the
+modern flavor. Development tooling takes the compat flavor. Examples are a
+Perl::Critic policy, a Dist::Zilla plugin, or a program that checks or builds
+other distributions. Such a tool runs inside somebody else's project, on the
+perl that the project already has. The more projects can run it, the more
+useful it is.
+
 "Already installed" is usually newer than it feels. Ubuntu 24.04 ships 5.38,
 and 22.04 ships 5.34, so ask what the floor really is. The two profiles differ
 by the policies that a newer perl makes pointless. Each becomes dead weight at
