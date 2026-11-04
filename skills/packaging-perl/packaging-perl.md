@@ -46,10 +46,10 @@ arrived in 5.14, so a lower declaration is one the code does not keep. Nothing
 older is worth the effort either: a perl before 5.14 is a box somebody is paying
 to keep alive, and supporting it is their bill.
 
-"Already installed" is usually newer than it feels -- Ubuntu 24.04 ships 5.38
-and 22.04 ships 5.34 -- so ask what the floor really is. The two profiles differ
-by exactly the policies a newer perl makes pointless, each of which becomes dead
-weight at a version you can look up:
+"Already installed" is usually newer than it feels. Ubuntu 24.04 ships 5.38,
+and 22.04 ships 5.34, so ask what the floor really is. The two profiles differ
+by the policies that a newer perl makes pointless. Each becomes dead weight at
+the version in this table:
 
 | policy | dead weight from | because |
 |---|---|---|
@@ -61,10 +61,10 @@ weight at a version you can look up:
 | `Variables::ProhibitPerl4PackageNames` | 5.042 | the apostrophe package separator is gone |
 | `CodeLayout::RequireASCII` | 5.042 | `source::encoding "ascii"`, which is stricter than the policy and not skippable |
 
-So a floor of 5.038 wants the compat profile with its first five lines deleted,
-and the strict profile still carries the last two because it assumes only 5.040.
-Delete those two once the floor is 5.041 or later, which selects the 5.042
-bundle.
+The floor picks the flavor and nothing else. A floor below 5.040 takes
+`troglodyne-compat`, and a floor of 5.040 or later takes `troglodyne-5.040`.
+At a higher floor, a policy in the table reports nothing, so it costs nothing.
+Leave the profile as `conformance` writes it, and do not tune it to the floor.
 
 Every row there was measured rather than remembered, and a new perl is a reason
 to measure again rather than to trust the table:
@@ -134,9 +134,16 @@ template, `update` does not write that file, and it says which variable to add.
 `update` never overwrites a file that exists. So you can run it again in a
 clone, which then gets the hooks that git does not install for it. You can also
 run it in an older distribution, which then gets the files that it lacks.
-`check` fails a profile whose first line is not the header of its template,
-and reports `info` for a hook that differs from its template. Merge such a
-file by hand.
+So the procedure is the same for a new distribution and an old one. Run
+`update`, then `check`, and do what each one says until `check` passes.
+
+`check` fails a profile that lacks a policy that its template enables, and
+names each such policy. `update` does not overwrite that profile. It names the
+policies to add by hand, so add a section for each one, and an authordep line
+for it in `dist.ini`. A profile can turn a policy off on purpose with a
+`[-Name]` section, and `check` accepts that. Do not delete a section of the
+profile, because `check` then reports its policy as missing. `check` reports
+`info` for a hook that differs from its template. Merge such a hook by hand.
 
 `update` also writes two files that Claude Code reads, and `check` fails a
 distribution without them. `.claude/settings.json` enables this plugin and
