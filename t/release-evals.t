@@ -74,6 +74,10 @@ ProhibitMutatingListFunctionsStricter that the profile turns on.
 C<$h{a}{b}> where C<no autovivification> is not in scope, and not in a block
 where it is.
 
+=item * perlcritic, with its profile, reports a range that counts down, such as
+C<$n .. 1> or C<10 .. 1>, which perl evaluates as an empty list.  It does not
+report a range that counts up, or a flip-flop.
+
 =back
 
 C<--keep-temp> keeps each run's directory, and the distribution is under
@@ -227,6 +231,14 @@ sub check_distribution {
     # does not enable.
     my ($autoviv) = $sandboxed->( $dist, {}, qw{perlcritic --profile .perlcriticrc --nocolor --verbose %l:%p\n zz-autoviv.pl} );
     is( join( q{ }, $autoviv =~ m/^(\d+):Variables::RequireNoAutovivification$/mg ), '4', "$label: and it reports a nested read only where no autovivification is not in scope" );
+
+    # A countdown from an expression and one between literals, then a range
+    # that counts up and a flip-flop, which is not a list at all.
+    open( $fh, '>', "$dist/zz-range.pl" ) or die "$dist: $!";
+    print {$fh} "use strict;\nuse warnings;\nmy \$n = \@ARGV;\nmy \@down = ( \$n .. 1 );\nmy \@none = ( 10 .. 1 );\nmy \@up = ( 1 .. \$n );\nprint if 3 .. 5;\n";
+    close($fh) or die "$dist: $!";
+    my ($range) = $sandboxed->( $dist, {}, qw{perlcritic --profile .perlcriticrc --nocolor --verbose %l:%p\n zz-range.pl} );
+    is( join( q{ }, $range =~ m/^(\d+):ValuesAndExpressions::ProhibitDescendingRanges$/mg ), '4 5', "$label: and it reports a range that counts down, and not one that counts up or a flip-flop" );
 
     return;
 }

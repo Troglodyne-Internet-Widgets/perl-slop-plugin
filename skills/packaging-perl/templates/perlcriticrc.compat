@@ -10,8 +10,7 @@
 # The difference is the five policies below.  The other profile leaves them out
 # because a modern perl refuses what they report, and none of that reasoning
 # survives down here: without them a bareword filehandle in this distribution is
-# caught by nothing at all.  Each says the version that makes it redundant, so a
-# floor above 5.014 can drop the ones it has earned:
+# caught by nothing at all.  Each says the version that makes it redundant:
 #
 #   TestingAndDebugging::RequireUseStrict       strict is on from 5.012
 #   Objects::ProhibitIndirectSyntax             no indirect from 5.036
@@ -59,6 +58,7 @@ strict = 1
 [ValuesAndExpressions::ProhibitDefinedBeforeLength]
 [Variables::ProhibitUselessVarClearing]
 [Subroutines::ProhibitTailRecursion]
+[ValuesAndExpressions::ProhibitDescendingRanges]
 [Bangs::ProhibitUselessRegexModifiers]
 [RegularExpressions::ProhibitIneffectiveModifiers]
 [Bangs::ProhibitCommentedOutCode]
