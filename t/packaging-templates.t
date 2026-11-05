@@ -438,6 +438,26 @@ subtest 'the preferred modules ban Carp' => sub {
     like( $section, qr/^reason\s*=.*\bdie\b/m, 'and says to die instead' );
 };
 
+# The builtin flock lets go of its lock only when its handle closes, so code
+# that dies under the lock depends on scope.  This asks PreferredModules, with
+# the profile and the file as a distribution has them, rather than the text.
+subtest 'the preferred modules ban the builtin flock' => sub {
+    require Cwd;
+    require File::Copy;
+    require Perl::Critic;
+    my $dir = tempdir( CLEANUP => 1 );
+    File::Copy::copy( "$TEMPLATES/preferred_modules.ini", "$dir/.preferred_modules.ini" ) or die "copy: $!";
+    my $was = Cwd::getcwd();
+    chdir $dir or die "chdir $dir: $!";
+    my $critic = Perl::Critic->new( -profile => "$TEMPLATES/perlcriticrc", '-single-policy' => 'PreferredModules' );
+    my @flock  = $critic->critique( \"package Probe;\nopen my \$fh, q{<}, q{/bogus} or die;\nflock \$fh, 2 or die;\n1;\n" );
+    my @mutex  = $critic->critique( \"package Probe;\nuse Mutex::Flock ();\nMutex::Flock->new( path => q{/bogus} )->synchronize( sub { 1 } );\n1;\n" );
+    chdir $was or die "chdir $was: $!";
+    is( scalar @flock, 1, 'code that calls the builtin flock is refused' ) or diag join q{}, @flock;
+    like( "@flock", qr/Mutex::Flock/, 'and pointed at Mutex::Flock' );
+    is( scalar @mutex, 0, 'and code that locks with Mutex::Flock is not' ) or diag join q{}, @mutex;
+};
+
 # Both options are off by default, and a policy section without them reports
 # only a sub that the policy can read.
 subtest 'both profiles turn on the call reports of the Stricter policy' => sub {
