@@ -248,28 +248,41 @@ person once per address they have ever committed from.
 
 **`metamerge.yml`** is not in the scaffold, because most distributions do not
 need it. A distribution that needs packages of the operating system, such as
-`ffmpeg`, declares them in this file under `x_system_packages`. CPAN has no
-field for such a package, so this key is the only place that the requirement
-is written. `[MetaMergeFile]` merges the file into `META.json`, so the
-declaration also goes to CPAN. A tool that sets up a host reads the
-declaration, and installs the packages before it installs the distribution:
+`ffmpeg`, declares them in this file. CPAN has no field for such a package, so
+this file is the only place that the requirement is written. `[MetaMergeFile]`
+merges the file into `META.json`, so the declaration also goes to CPAN. A tool
+that sets up a host reads the declaration, and installs the packages before it
+installs the distribution:
 
 ```yaml
 x_system_packages:
+  FooLib:
+    deb:
+      name: libfoo-devel
+      ubuntu/24.04: libfoo-dev
+    rpm: libfoo-devel
+  ffmpeg:
+    deb: { name: ffmpeg, source: jellyfin }
+    test: ffmpeg -version
+x_system_sources:
   deb:
-    - ffmpeg
-  programs:
-    - ffmpeg -version
+    - name: jellyfin
+      uri: https://repo.test.test/ubuntu
+      suites: ['{codename}']
+      components: [main]
+      key: https://repo.test.test/key.gpg
+      fingerprint: 0123456789ABCDEF0123456789ABCDEF01234567
 ```
 
-Each key other than `programs` and `sources` is the name of a packager, and
-holds a list of package names. If a package has another name on one distro or
-release, write the entry as a mapping, such as
-`{ name: libssl3, ubuntu/24.04: libssl3t64 }`. `sources` holds the third-party
-archives of each packager, each with the full fingerprint of its signing key.
-`programs` is optional. It holds commands that must exit 0 after the packages
-are installed. The check `SystemPackages` of the flavor refuses a name that is
-not a plain package name, and a source without a fingerprint. `perldoc
+Each key of `x_system_packages` is a name that you choose for one dependency.
+Under it, each packager gives the package name. If the name is different on one
+distro or release, use a mapping, as for `FooLib`. A null value for a release
+means that the release needs no package. `test` is optional. It is a command
+that must exit 0 after the package is installed. `x_system_sources` holds the
+third-party archives, each with the full fingerprint of its signing key. If a
+dependency has no package for a host, the build of that host fails. The check
+`SystemPackages` of the flavor refuses a name that is not a plain package
+name, and a source without a fingerprint. `perldoc
 Dist::Conformance::Check::SystemPackages` gives the rules.
 
 **`git-hooks/pre-commit`** runs perltidy over the Perl you staged, restages it,

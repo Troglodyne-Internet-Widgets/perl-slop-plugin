@@ -212,12 +212,14 @@ subtest 'metamerge.yml declares system packages that a packager can install' => 
         return $result->{status};
     };
 
-    is( $status->(undef),                                                                        'pass', 'a distribution that declares nothing passes' );
-    is( $status->("x_system_packages:\n  deb: [ffmpeg, libmagic-dev]\n  programs: [ffmpeg -version]\n"), 'pass', 'and so does one that declares packages and programs' );
-    is( $status->("x_system_packages:\n  deb: [ffmpeg-]\n"),                                     'fail', 'a deb name that apt reads as a removal fails' );
-    is( $status->("x_system_packages:\n  deb:\n    - { name: libssl3, ubuntu/24.04: libssl3t64 }\n"), 'pass', 'and one that names a package for a release' );
-    is( $status->("x_system_packages:\n  sources:\n    deb:\n      - { name: x, uri: 'https://repo.test.test', suites: [stable], components: [main], key: 'https://repo.test.test/k' }\n"), 'fail', 'a source without the fingerprint of its key fails' );
-    is( $status->("x_system_packages:\n  Deb: [ffmpeg]\n"),                                      'fail', 'and so does a key that is not the name of a packager' );
+    is( $status->(undef), 'pass', 'a distribution that declares nothing passes' );
+    is( $status->("x_system_packages:\n  ffmpeg:\n    deb: ffmpeg\n    test: ffmpeg -version\n"), 'pass', 'and so does one that declares a dependency and its test' );
+    is( $status->("x_system_packages:\n  Ssl:\n    deb: { name: libssl3, ubuntu/24.04: libssl3t64, debian/13: ~ }\n"), 'pass', 'and one that names a package for a release, or none' );
+    is( $status->("x_system_packages:\n  ffmpeg:\n    deb: { name: ffmpeg, source: jellyfin }\nx_system_sources:\n  deb:\n    - { name: jellyfin, uri: 'https://repo.test.test', suites: [stable], components: [main], key: 'https://repo.test.test/k', fingerprint: 0123456789ABCDEF0123456789ABCDEF01234567 }\n"), 'pass', 'and one whose package comes from an archive' );
+    is( $status->("x_system_packages:\n  ffmpeg:\n    deb: { name: ffmpeg, source: jellyfin }\nx_system_sources:\n  deb:\n    - { name: jellyfin, uri: 'https://repo.test.test', suites: [stable], components: [main], key: 'https://repo.test.test/k' }\n"), 'fail', 'a source without the fingerprint of its key fails' );
+    is( $status->("x_system_packages:\n  ffmpeg:\n    deb: { name: ffmpeg, source: jellyfin }\n"), 'fail', 'and so does a source that is not declared' );
+    is( $status->("x_system_packages:\n  ffmpeg: { deb: ffmpeg- }\n"), 'fail', 'a deb name that apt reads as a removal fails' );
+    is( $status->("x_system_packages:\n  ffmpeg: { Deb: ffmpeg }\n"), 'fail', 'and so does a key that is not the name of a packager' );
 };
 
 subtest 'a placeholder that nothing fills stops its file, and says which' => sub {
