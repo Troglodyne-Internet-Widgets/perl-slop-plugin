@@ -262,10 +262,14 @@ x_system_packages:
     - ffmpeg -version
 ```
 
-Each key other than `programs` is the name of a packager, and holds a list of
-package names. `programs` is optional. It holds commands that must exit 0 after
-the packages are installed. The check `SystemPackages` of the flavor refuses a
-name that is not a plain package name. `perldoc
+Each key other than `programs` and `sources` is the name of a packager, and
+holds a list of package names. If a package has another name on one distro or
+release, write the entry as a mapping, such as
+`{ name: libssl3, ubuntu/24.04: libssl3t64 }`. `sources` holds the third-party
+archives of each packager, each with the full fingerprint of its signing key.
+`programs` is optional. It holds commands that must exit 0 after the packages
+are installed. The check `SystemPackages` of the flavor refuses a name that is
+not a plain package name, and a source without a fingerprint. `perldoc
 Dist::Conformance::Check::SystemPackages` gives the rules.
 
 **`git-hooks/pre-commit`** runs perltidy over the Perl you staged, restages it,

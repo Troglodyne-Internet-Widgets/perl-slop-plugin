@@ -215,6 +215,8 @@ subtest 'metamerge.yml declares system packages that a packager can install' => 
     is( $status->(undef),                                                                        'pass', 'a distribution that declares nothing passes' );
     is( $status->("x_system_packages:\n  deb: [ffmpeg, libmagic-dev]\n  programs: [ffmpeg -version]\n"), 'pass', 'and so does one that declares packages and programs' );
     is( $status->("x_system_packages:\n  deb: [ffmpeg-]\n"),                                     'fail', 'a deb name that apt reads as a removal fails' );
+    is( $status->("x_system_packages:\n  deb:\n    - { name: libssl3, ubuntu/24.04: libssl3t64 }\n"), 'pass', 'and one that names a package for a release' );
+    is( $status->("x_system_packages:\n  sources:\n    deb:\n      - { name: x, uri: 'https://repo.test.test', suites: [stable], components: [main], key: 'https://repo.test.test/k' }\n"), 'fail', 'a source without the fingerprint of its key fails' );
     is( $status->("x_system_packages:\n  Deb: [ffmpeg]\n"),                                      'fail', 'and so does a key that is not the name of a packager' );
 };
 
