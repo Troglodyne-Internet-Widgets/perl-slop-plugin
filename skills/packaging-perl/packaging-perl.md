@@ -246,6 +246,28 @@ without it. See below.
 **`.mailmap`** is for `[Git::Contributors]`, which otherwise lists the same
 person once per address they have ever committed from.
 
+**`metamerge.yml`** is not in the scaffold, because most distributions do not
+need it. A distribution that needs packages of the operating system, such as
+`ffmpeg`, declares them in this file under `x_system_packages`. CPAN has no
+field for such a package, so this key is the only place that the requirement
+is written. `[MetaMergeFile]` merges the file into `META.json`, so the
+declaration also goes to CPAN. A tool that sets up a host reads the
+declaration, and installs the packages before it installs the distribution:
+
+```yaml
+x_system_packages:
+  deb:
+    - ffmpeg
+  programs:
+    - ffmpeg -version
+```
+
+Each key other than `programs` is the name of a packager, and holds a list of
+package names. `programs` is optional. It holds commands that must exit 0 after
+the packages are installed. The check `SystemPackages` of the flavor refuses a
+name that is not a plain package name. `perldoc
+Dist::Conformance::Check::SystemPackages` gives the rules.
+
 **`git-hooks/pre-commit`** runs perltidy over the Perl you staged, restages it,
 runs `perlcritic --profile .perlcriticrc` over the same files, and then runs the
 tests. It needs

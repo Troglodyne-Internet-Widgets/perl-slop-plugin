@@ -71,3 +71,6 @@ checks:
                 items:
                   type: string
         before_commit: *gate
+  # The system packages that metamerge.yml declares under x_system_packages.
+  # A distribution without that file or that key passes.
+  SystemPackages: {}

@@ -27,6 +27,7 @@ use FindBin;
 
 BEGIN {
     eval { require Dist::Conformance; 1 } or plan skip_all => 'Dist::Conformance is not installed';
+    eval { require Dist::Conformance::Check::SystemPackages; 1 } or plan skip_all => 'Dist::Conformance is too old to have the check SystemPackages, which the flavors run';
 }
 
 my $ROOT      = "$FindBin::Bin/..";
@@ -197,6 +198,24 @@ subtest 'the scaffold gates its prose, and can install what the gates ask for' =
         my ($marketplace) = $plugin =~ m/\@(.+)\z/;
         ok( $settings->{extraKnownMarketplaces}{$marketplace}{source}{repo}, "and name the marketplace of $plugin, so a clone can install it" );
     }
+};
+
+# CPAN has no field for a package of the operating system, so a distribution
+# declares them in metamerge.yml, and the flavor checks the declaration.
+subtest 'metamerge.yml declares system packages that a packager can install' => sub {
+    my $repo   = repository( 'troglodyne-5.040', %VARIABLES );
+    my $status = sub {
+        my ($yaml) = @_;
+        if ( defined $yaml ) { spew( "$repo/metamerge.yml", $yaml ) }
+        else                 { unlink "$repo/metamerge.yml" }
+        my ($result) = grep { $_->{check} eq 'SystemPackages' } @{ conformance($repo)->check };
+        return $result->{status};
+    };
+
+    is( $status->(undef),                                                                        'pass', 'a distribution that declares nothing passes' );
+    is( $status->("x_system_packages:\n  deb: [ffmpeg, libmagic-dev]\n  programs: [ffmpeg -version]\n"), 'pass', 'and so does one that declares packages and programs' );
+    is( $status->("x_system_packages:\n  deb: [ffmpeg-]\n"),                                     'fail', 'a deb name that apt reads as a removal fails' );
+    is( $status->("x_system_packages:\n  Deb: [ffmpeg]\n"),                                      'fail', 'and so does a key that is not the name of a packager' );
 };
 
 subtest 'a placeholder that nothing fills stops its file, and says which' => sub {
