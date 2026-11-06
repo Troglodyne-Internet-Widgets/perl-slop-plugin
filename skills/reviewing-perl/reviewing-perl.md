@@ -266,7 +266,10 @@ spends some of it, so each one has to earn its place.
 ## Finally
 
 Run the suite (`prove -lm -j8`) and make sure every changed file still compiles
-(`perl -c`) and its POD still parses (`podchecker`) before you call it done.
+(`perl -c`) and its POD still parses before you call it done.  Check the POD
+with `podchecker`, or with `dzil podchecker` in a distribution whose POD
+Pod::Weaver writes, because `podchecker` reports each command of Pod::Weaver,
+such as `=method`, as an error.
 
 Then check that your checks can fail. A test nobody has watched go red is a test
 you are hoping about, and the same goes for anything you run in a shell to
