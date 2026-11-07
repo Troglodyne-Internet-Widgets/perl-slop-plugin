@@ -89,3 +89,6 @@ checks:
               not: {}
               x-errorMessage:
                 not: overrides the account in the URL of the origin remote, so remove it
+  # The system packages that metamerge.yml declares under x_system_packages.
+  # A distribution without that file or that key passes.
+  SystemPackages: {}

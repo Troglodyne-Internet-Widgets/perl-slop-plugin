@@ -27,6 +27,7 @@ use FindBin;
 
 BEGIN {
     eval { require Dist::Conformance; 1 } or plan skip_all => 'Dist::Conformance is not installed';
+    eval { require Dist::Conformance::Check::SystemPackages; 1 } or plan skip_all => 'Dist::Conformance is too old to have the check SystemPackages, which the flavors run';
 }
 
 my $ROOT      = "$FindBin::Bin/..";
@@ -215,6 +216,28 @@ subtest 'the scaffold gates its prose, and can install what the gates ask for' =
         my ($marketplace) = $plugin =~ m/\@(.+)\z/;
         ok( $settings->{extraKnownMarketplaces}{$marketplace}{source}{repo}, "and name the marketplace of $plugin, so a clone can install it" );
     }
+};
+
+# CPAN has no field for a package of the operating system, so a distribution
+# declares them in metamerge.yml, and the flavor checks the declaration.
+subtest 'metamerge.yml declares system packages that a packager can install' => sub {
+    my $repo   = repository( 'troglodyne-5.040', %VARIABLES );
+    my $status = sub {
+        my ($yaml) = @_;
+        if ( defined $yaml ) { spew( "$repo/metamerge.yml", $yaml ) }
+        else                 { unlink "$repo/metamerge.yml" }
+        my ($result) = grep { $_->{check} eq 'SystemPackages' } @{ conformance($repo)->check };
+        return $result->{status};
+    };
+
+    is( $status->(undef), 'pass', 'a distribution that declares nothing passes' );
+    is( $status->("x_system_packages:\n  ffmpeg:\n    deb: ffmpeg\n    test: ffmpeg -version\n"), 'pass', 'and so does one that declares a dependency and its test' );
+    is( $status->("x_system_packages:\n  Ssl:\n    deb: { name: libssl3, ubuntu/24.04: libssl3t64, debian/13: ~ }\n"), 'pass', 'and one that names a package for a release, or none' );
+    is( $status->("x_system_packages:\n  ffmpeg:\n    deb: { name: ffmpeg, source: jellyfin }\nx_system_sources:\n  deb:\n    - { name: jellyfin, uri: 'https://repo.test.test', suites: [stable], components: [main], key: 'https://repo.test.test/k', fingerprint: 0123456789ABCDEF0123456789ABCDEF01234567 }\n"), 'pass', 'and one whose package comes from an archive' );
+    is( $status->("x_system_packages:\n  ffmpeg:\n    deb: { name: ffmpeg, source: jellyfin }\nx_system_sources:\n  deb:\n    - { name: jellyfin, uri: 'https://repo.test.test', suites: [stable], components: [main], key: 'https://repo.test.test/k' }\n"), 'fail', 'a source without the fingerprint of its key fails' );
+    is( $status->("x_system_packages:\n  ffmpeg:\n    deb: { name: ffmpeg, source: jellyfin }\n"), 'fail', 'and so does a source that is not declared' );
+    is( $status->("x_system_packages:\n  ffmpeg: { deb: ffmpeg- }\n"), 'fail', 'a deb name that apt reads as a removal fails' );
+    is( $status->("x_system_packages:\n  ffmpeg: { Deb: ffmpeg }\n"), 'fail', 'and so does a key that is not the name of a packager' );
 };
 
 subtest 'a placeholder that nothing fills stops its file, and says which' => sub {
