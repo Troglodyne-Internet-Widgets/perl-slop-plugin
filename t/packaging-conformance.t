@@ -38,7 +38,6 @@ my %VARIABLES = (
     AUTHOR_EMAIL     => 'tester@test.test',
     COPYRIGHT_HOLDER => 'Test Co',
     YEAR             => '2026',
-    GITHUB_USER      => 'tester',
     CPAN_ID          => 'TESTER',
     DATE             => '2026-11-03',
 );

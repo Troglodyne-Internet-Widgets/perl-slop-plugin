@@ -102,7 +102,6 @@ variables:
   AUTHOR_EMAIL: tester@test.test
   COPYRIGHT_HOLDER: Test Co
   YEAR: '2026'
-  GITHUB_USER: tester
   CPAN_ID: TESTER
   DATE: '2026-11-03'
 YAML
@@ -116,7 +115,6 @@ placeholders of the templates:
 | `DIST` | the distribution name, as `dist.ini`'s `name =`, for example `Configd` or `Foo-Bar` |
 | `AUTHOR_NAME`, `AUTHOR_EMAIL` | as they must appear in POD and metadata |
 | `COPYRIGHT_HOLDER`, `YEAR` | for the licence and the generated POD |
-| `GITHUB_USER` | the account that the repository lives under, for `[GithubMeta]` |
 | `CPAN_ID` | your PAUSE id, for the `Changes` entry |
 | `DATE` | today, `YYYY-MM-DD` |
 
