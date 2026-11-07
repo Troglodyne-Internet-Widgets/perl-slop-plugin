@@ -176,6 +176,25 @@ subtest '.perl-slop.json holds only what the hooks read' => sub {
     is( $config_status->('{"before_edit":'),                               'fail', 'or a file that is not JSON' );
 };
 
+# [GithubMeta] takes the account from the origin remote, and user overrides it,
+# so the metadata of a repository that moved names the old account.
+subtest 'dist.ini lets [GithubMeta] take the account from the remote' => sub {
+    my $repo   = repository( 'troglodyne-5.040', %VARIABLES );
+    my $result = sub {
+        my ($ini) = @_;
+        spew( "$repo/dist.ini", $ini );
+        my ($result) = grep { $_->{check} eq 'GithubMetaFromRemote' } @{ conformance($repo)->check };
+        return $result;
+    };
+
+    is( $result->("name = Foo-Bar\n[GithubMeta]\nissues = 1\n")->{status}, 'pass', 'a [GithubMeta] without user passes' );
+    my $user = $result->("name = Foo-Bar\n[GithubMeta]\nissues = 1\nuser = someone\n");
+    is( $user->{status}, 'fail', 'and one with user fails' );
+    like( $user->{detail}, qr{/GithubMeta/user: overrides the account in the URL of the origin remote}, 'and says why' );
+    is( $result->("[GithubMeta / Meta]\nuser = someone\n")->{status}, 'fail', 'and so does a [GithubMeta] with a name of its own' );
+    is( $result->("[Run::Test]\nrun = a\nrun = b\n")->{status},     'pass', 'a dist.ini without [GithubMeta] passes' );
+};
+
 # The gates are only as good as what the hook makes of them, and a gate on a
 # skill whose plugin a clone cannot install refuses every edit it covers.
 subtest 'the scaffold gates its prose, and can install what the gates ask for' => sub {

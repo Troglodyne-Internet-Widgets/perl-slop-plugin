@@ -71,6 +71,24 @@ checks:
                 items:
                   type: string
         before_commit: *gate
+  # user overrides the account in the URL of the origin remote, so the
+  # metadata names the old place once the repository moves.  The template no
+  # longer sets it, and update never rewrites a dist.ini, so this finds the
+  # distributions that still do.
+  GithubMetaFromRemote:
+    module: DataSchema
+    file: dist.ini
+    missing: info
+    schema:
+      type: object
+      patternProperties:
+        '\AGithubMeta(?:\s*/.*)?\z':
+          type: object
+          properties:
+            user:
+              not: {}
+              x-errorMessage:
+                not: overrides the account in the URL of the origin remote, so remove it
   # The system packages that metamerge.yml declares under x_system_packages.
   # A distribution without that file or that key passes.
   SystemPackages: {}
