@@ -48,13 +48,9 @@ apply to every project, Perl or not.
   that write, and `gh api` with a field or a write method.  It also covers MCP
   tools whose names say that they create, add, update, post, submit, reply to
   or merge one of those.
-- Before `gh pr create` for a repository that origin does not name,
-  `perl-slop:pull-requests`.  A `--head` of the form `owner:branch` is from a
-  fork, and a `--repo` is compared with origin.  With neither, gh chooses the
-  repository, and in a clone of a fork it chooses the parent.  So then the hook
-  asks `gh repo view` which repository gh chose, with a limit of 5 seconds.  If
-  git or gh does not answer, the gate applies, because it only asks for a
-  skill.
+- Before every `gh pr create`, `perl-slop:pull-requests`.  The skill says how
+  a pull request closes the issue that it fixes, and what to find out before
+  a pull request to another project.
 - A `gh pr create` with no `--assignee` is refused, whatever skills are
   loaded.  The refusal asks for `--assignee @me`.  `@me` is the account that
   gh runs as.  A flag inside a quoted word, such as a title, does not count.

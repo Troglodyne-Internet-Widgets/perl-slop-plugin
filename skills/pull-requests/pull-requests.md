@@ -1,23 +1,61 @@
 ---
 name: pull-requests
-trigger: You are about to fix, or offer a fix for, a bug in a project that you do not maintain.  Or a command is about to run gh pr create against a repository that origin does not name.
+trigger: A command is about to run gh pr create, for any repository.  Or you are about to fix, or offer a fix for, a bug in a project that you do not maintain.
 description: |
-  Before you send a fix to another project, find out three things.  Does it
-  still need the fix?  Did somebody send it already?  What does the project
-  enforce?  Then prepare the branch and the description.  The user opens the
-  pull request.  Your clone can be old, and the bug can have an old issue.
-  The lint in the guide can differ from the lint that CI runs.
+  Every pull request that fixes an issue says so with a closing keyword, or
+  the issue stays open after the merge.  Before you send a fix to another
+  project, find out three things.  Does it still need the fix?  Did somebody
+  send it already?  What does the project enforce?  Then prepare the branch
+  and the description.  The user opens that pull request.
 ---
+
+# Pull requests
+
+The hooks of this plugin ask for this skill before every `gh pr create`.
+
+## Every pull request
+
+If the pull request fixes an issue, end its description with a closing
+keyword and the number of the issue:
+
+    Closes #12
+
+When the pull request merges into the default branch, GitHub closes the
+issue.  A plain mention, such as "the fix for #12", only links the issue.
+Nothing closes it, and it stays open until somebody notices.
+
+- The keywords are `close`, `closes`, `closed`, `fix`, `fixes`, `fixed`,
+  `resolve`, `resolves` and `resolved`.  Use `Closes`.
+- Give each issue its own keyword: `Closes #12, closes #14`.
+- For an issue in another repository, name it in full:
+  `Closes OWNER/NAME#12`.
+- If the change only does part of the issue, or leaves a question of it open,
+  do not close it.  Say what is left, and link the issue with "Part of #12".
+  If the open question gets an issue of its own, close the old one and link
+  the new one.
+
+GitHub reads the keyword only when the pull request merges into the default
+branch.  A pull request stacked on another branch closes nothing when it
+merges.  So when the base is not the default branch, put the keyword in the
+commit message too.  GitHub reads it there when the commit reaches the default
+branch.
+
+Before you open the pull request, read the description again, and make sure
+that it names each issue that the change fixes.  After the merge, make sure
+that each issue closed:
+
+    gh issue view 12 --json state --jq .state
 
 # A pull request to another project
 
-The hooks of this plugin ask for this skill before `gh pr create` for a
-repository that origin does not name.  That is late.  Do steps 1 and 2 before
-you write the change.  So load this skill when the work starts.
+Do steps 1 and 2 before you write the change.  So load this skill when that
+work starts, not when you open the pull request.
 
 Always pass `--repo OWNER/NAME` to `gh pr create`.  Without it, gh chooses the
-repository, and in a clone of a fork it chooses the parent.  The hook then has
-to ask gh which repository it chose.
+repository, and in a clone of a fork it chooses the parent.
+
+The section above applies here too, but the project decides how a pull request
+links an issue.  Step 4 says how to find that out.
 
 ## 1. Make sure that the bug is still there
 
