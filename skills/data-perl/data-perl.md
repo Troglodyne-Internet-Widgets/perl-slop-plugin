@@ -118,6 +118,21 @@ for (my $i=0; $i < scalar(@arr); $i++) {
 
 In general `List::Util` and `List::MoreUtils` can handle most of your hash & list manipulation needs.
 
+# Data in a database
+
+When the data is in a database, filter, join, sort, count and derive it in
+SQL.  Do not do it in perl, over the rows that a query returned.  Perl that does
+this work has to fetch and decode every row first, and that costs more than
+the work itself.
+
+Put a query that is more than a plain select in a view, or in a stored
+procedure where the database has them.  Then the perl that reads it selects
+named columns, and the logic is in one place, where every caller gets it.
+
+Before you write data work in perl, ask where the data lives.  If a generic
+method does the work in perl for a model that has a database, override it in
+that model with a query.
+
 # Subroutines: state or data manipulation
 
 Nearly every sub you write is one of two things, and it is worth knowing which
