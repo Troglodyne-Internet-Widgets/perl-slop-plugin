@@ -12,7 +12,6 @@ use File::Path     ();
 use File::Spec     ();
 use JSON::PP       ();    ## no critic (PreferredModules) -- core, so the hook runs on any perl; see $JSON_CLASS
 use List::Util     ();
-use POSIX          ();
 use Time::HiRes    ();
 use Time::Local    ();
 
@@ -50,7 +49,7 @@ stopping work.  C<PERL_SLOP_GATES=0> in the environment turns it off.
 # edit and commit are for Perl.  prose is for anything written in any
 # language, and for anything said to anyone.  signal is for any process,
 # and copy for a copy of any tree.
-# upstream is for a pull request to a repository that origin does not name.
+# pr is for any pull request.
 # debug is for a run of the perl debugger.
 # The plugin that this hook belongs to, whose skills are loaded when it runs.
 our $PLUGIN = 'perl-slop';
@@ -61,7 +60,7 @@ our %BASE = (
     prose    => ['perl-slop:information-security'],
     signal   => ['perl-slop:killing-processes'],
     copy     => ['perl-slop:copying-files'],
-    upstream => ['perl-slop:pull-requests'],
+    pr       => ['perl-slop:pull-requests'],
     debug    => ['perl-slop:debugging-perl'],
 );
 
@@ -225,16 +224,6 @@ our %SHELL_ACTION = (
 # An --assignee among the arguments of gh pr create, and the logins it names.
 our $ASSIGNEE_RX = qr/(?<!\S)(?:--assignee(?:=|\s+|\z)|-a\s*)(\S*)/;
 
-# The commands that name the repository of origin, and the repository that gh
-# makes a pull request against when no --repo says.  Each runs in the directory
-# of the command, and prints one line.
-our @ORIGIN_COMMAND = qw{git config --get remote.origin.url};
-our @BASE_COMMAND   = qw{gh repo view --json nameWithOwner --jq .nameWithOwner};
-
-# How long to wait for one of them, in seconds.  Claude Code stops the whole
-# hook after 10.
-our $ASK_TIMEOUT = 5;
-
 # A prompt about a pull request to somebody else's project.
 our $UPSTREAM_RX = qr/\bupstream\b|\b(?:PR|pull\s+request)s?\s+(?:to|on|for)\s+(?!(?:master|main)\b)\w/i;
 
@@ -311,8 +300,8 @@ sub decide {
             my $out = debug_gate($input);
             return $out if $out;
         }
-        if ( is_upstream_pr( $command, $dir ) ) {
-            my $out = upstream_gate($input);
+        if ( defined pr_create_args($command) ) {
+            my $out = pr_gate($input);
             return $out if $out;
         }
         if ( is_publish($command) ) {
@@ -637,16 +626,16 @@ sub read_first_line {
     return $line;
 }
 
-=head2 $output = upstream_gate(\%input)
+=head2 $output = pr_gate(\%input)
 
-Refuses a pull request to an upstream repository until
-C<perl-slop:pull-requests> is loaded.
+Refuses a pull request, to any repository, until C<perl-slop:pull-requests>
+is loaded.
 
 =cut
 
-sub upstream_gate {
+sub pr_gate {
     my ($input) = @_;
-    return load_gate( $input, $BASE{upstream}, 'a pull request to a repository that origin does not name', 'run it again' );
+    return load_gate( $input, $BASE{pr}, 'a pull request', 'run it again' );
 }
 
 =head2 $output = assignee_gate()
@@ -1079,30 +1068,6 @@ sub is_publish {
     return bare_command($command) =~ $PUBLISH_RX;
 }
 
-=head2 $bool = is_upstream_pr($command, $dir)
-
-Whether a Bash command runs C<gh pr create> for a repository other than the
-one that origin names, in C<$dir>.
-
-A C<--head> of the form C<owner:branch> is from a fork, so it is upstream.  A
-C<--repo> is compared with origin.  With neither, gh chooses the repository,
-and in a clone of a fork it chooses the parent.  So then this asks gh which
-repository it would choose.  When origin or gh does not answer, the pull
-request counts as upstream, because the gate only asks for a skill.
-
-=cut
-
-sub is_upstream_pr {
-    my ( $command, $dir ) = @_;
-    my $args = pr_create_args($command) // return;
-
-    return 1 if $args =~ m/(?<!\S)(?:--head[=\s]|-H\s*)[^\s:]+:/;
-    my $origin = repo_of( output_in( $dir, @ORIGIN_COMMAND ) ) // return 1;
-    my ($named) = $args =~ m/(?<!\S)(?:--repo[=\s]|-R\s*)(\S+)/;
-    my $base = repo_of( $named // output_in( $dir, @BASE_COMMAND ) ) // return 1;
-    return $base ne $origin;
-}
-
 =head2 $bool = is_unassigned_pr($command)
 
 Whether a Bash command runs C<gh pr create> that assigns nobody, or, when
@@ -1140,54 +1105,6 @@ sub pr_create_args {
         return join q{ }, map { $_->{text} =~ s/\s/\0/gr } @$args;
     }
     return;
-}
-
-=head2 $repo = repo_of($name)
-
-The C<owner/name> of a repository, in lower case, from a remote URL, a
-C<HOST/OWNER/REPO> or an C<OWNER/REPO>, or undef.
-
-=cut
-
-sub repo_of {
-    my ($name) = @_;
-    return if !defined $name;
-    my ($repo) = $name =~ m{([^/:\s]+/[^/:\s]+?)(?:[.]git)?/*\z};
-    return defined $repo ? lc $repo : undef;
-}
-
-=head2 $line = output_in($dir, @command)
-
-The first line that C<@command> prints when it runs in C<$dir>, or undef when
-it fails, prints nothing or takes longer than C<$ASK_TIMEOUT> seconds.  What
-it says on its standard error is thrown away.
-
-=cut
-
-sub output_in {
-    my ( $dir, @command ) = @_;
-
-    my $pid = open( my $fh, '-|' ) // return;
-    if ( !$pid ) {
-        open( STDERR, '>', File::Spec->devnull() ) or POSIX::_exit(127);
-        chdir($dir)                                 or POSIX::_exit(127);
-        exec {$command[0]} @command or POSIX::_exit(127);
-    }
-
-    my $line = eval {
-        local $SIG{ALRM} = sub { die "timeout\n" };
-        alarm $ASK_TIMEOUT;
-        my $first = <$fh>;
-        alarm 0;
-        $first;
-    };
-    if ( !defined $line && $@ ) {
-        kill 'TERM', $pid;
-    }
-    close($fh) or return;
-    return if !defined $line;
-    chomp $line;
-    return length $line ? $line : undef;
 }
 
 =head2 $bool = is_signal($command)
