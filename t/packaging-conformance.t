@@ -28,6 +28,7 @@ use FindBin;
 BEGIN {
     eval { require Dist::Conformance; 1 } or plan skip_all => 'Dist::Conformance is not installed';
     eval { require Dist::Conformance::Check::SystemPackages; 1 } or plan skip_all => 'Dist::Conformance is too old to have the check SystemPackages, which the flavors run';
+    eval { require Dist::Conformance::Check::RefusedIniKeys; 1 } or plan skip_all => 'Dist::Conformance is too old to have the check RefusedIniKeys, which the flavors run';
 }
 
 my $ROOT      = "$FindBin::Bin/..";
@@ -190,9 +191,14 @@ subtest 'dist.ini lets [GithubMeta] take the account from the remote' => sub {
     is( $result->("name = Foo-Bar\n[GithubMeta]\nissues = 1\n")->{status}, 'pass', 'a [GithubMeta] without user passes' );
     my $user = $result->("name = Foo-Bar\n[GithubMeta]\nissues = 1\nuser = someone\n");
     is( $user->{status}, 'fail', 'and one with user fails' );
-    like( $user->{detail}, qr{/GithubMeta/user: overrides the account in the URL of the origin remote}, 'and says why' );
+    like( $user->{detail}, qr{user in \[GithubMeta\], which overrides the account in the URL of the origin remote}, 'and says why' );
     is( $result->("[GithubMeta / Meta]\nuser = someone\n")->{status}, 'fail', 'and so does a [GithubMeta] with a name of its own' );
     is( $result->("[Run::Test]\nrun = a\nrun = b\n")->{status},     'pass', 'a dist.ini without [GithubMeta] passes' );
+
+    $result->("name = Foo-Bar\n; the metadata\n[GithubMeta]\nissues = 1\nuser = someone\nhomepage = https://test.test/\n");
+    my ($update) = grep { $_->{check} eq 'GithubMetaFromRemote' } @{ conformance($repo)->update };
+    is_deeply( $update->{manual}, [], 'update leaves nothing for a person' ) or diag( explain $update );
+    is( slurp("$repo/dist.ini"), "name = Foo-Bar\n; the metadata\n[GithubMeta]\nissues = 1\nhomepage = https://test.test/\n", 'and removes the line of user, and only that' );
 };
 
 # The gates are only as good as what the hook makes of them, and a gate on a
