@@ -78,6 +78,10 @@ where it is.
 C<$n .. 1> or C<10 .. 1>, which perl evaluates as an empty list.  It does not
 report a range that counts up, or a flip-flop.
 
+=item * perlcritic, with its profile, reports a regular expression written as a
+string: the value of a C<pattern> key, and a scalar declared with a string and
+then matched with.  It does not report a C<qr//>.
+
 =back
 
 C<--keep-temp> keeps each run's directory, and the distribution is under
@@ -239,6 +243,14 @@ sub check_distribution {
     close($fh) or die "$dist: $!";
     my ($range) = $sandboxed->( $dist, {}, qw{perlcritic --profile .perlcriticrc --nocolor --verbose %l:%p\n zz-range.pl} );
     is( join( q{ }, $range =~ m/^(\d+):ValuesAndExpressions::ProhibitDescendingRanges$/mg ), '4 5', "$label: and it reports a range that counts down, and not one that counts up or a flip-flop" );
+
+    # A pattern key with a string, a string in a scalar that is matched with,
+    # and then the same two written as qr//.
+    open( $fh, '>', "$dist/zz-regex-string.pl" ) or die "$dist: $!";
+    print {$fh} "use strict;\nuse warnings;\nmy \%s = ( pattern => '^a+\$' );\nmy \$re = 'b+';\nprint 1 if \$ARGV[0] =~ m/\$re/aa;\nmy \%t = ( pattern => qr/^a+\$/aa );\nmy \$qr = qr/b+/aa;\nprint 1 if \$ARGV[0] =~ \$qr;\n";
+    close($fh) or die "$dist: $!";
+    my ($strings) = $sandboxed->( $dist, {}, qw{perlcritic --profile .perlcriticrc --nocolor --verbose %l:%p\n zz-regex-string.pl} );
+    is( join( q{ }, $strings =~ m/^(\d+):RegularExpressions::ProhibitRegexInStrings$/mg ), '3 4', "$label: and it reports a regular expression written as a string, and not one written as qr//" );
 
     return;
 }

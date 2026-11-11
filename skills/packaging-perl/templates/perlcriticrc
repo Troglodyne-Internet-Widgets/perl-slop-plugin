@@ -42,6 +42,8 @@ allow-unsafe = 1
 [RegularExpressions::RequireDefault]
 strict = 1
 [RegularExpressions::PreventUselessMetacharacterEscapes]
+# A pattern written as a string loses the modifiers that RequireDefault asks for.
+[RegularExpressions::ProhibitRegexInStrings]
 # PEBCAK catches
 [BuiltinFunctions::ProhibitDeleteOnArrays]
 [Subroutines::ProhibitAmbiguousFunctionCalls]
