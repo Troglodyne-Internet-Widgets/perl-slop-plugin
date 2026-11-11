@@ -11,3 +11,7 @@ checks:
     file: .perlcriticrc
     template: templates/perlcriticrc.compat
     replace: false
+    # Dropped from the compat profile once it allowed a private _helper.  A
+    # profile made before then still enables it, and the update removes it.
+    retired:
+      - Subroutines::ProhibitUnderscorePrivateSubs
