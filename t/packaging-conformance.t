@@ -201,6 +201,28 @@ subtest 'dist.ini lets [GithubMeta] take the account from the remote' => sub {
     is( slurp("$repo/dist.ini"), "name = Foo-Bar\n; the metadata\n[GithubMeta]\nissues = 1\nhomepage = https://test.test/\n", 'and removes the line of user, and only that' );
 };
 
+# A policy that the compat template dropped stays in every profile made before,
+# because the check leaves a distribution its own policies.  Only the flavor's
+# list of retired policies takes it out.
+subtest 'the compat flavor takes out ProhibitUnderscorePrivateSubs, and the strict one keeps it' => sub {
+    plan skip_all => 'Dist::Conformance is too old to retire a policy' unless eval { Dist::Conformance->VERSION('0.005'); 1 };
+
+    my $old = "[Subroutines::ProhibitUnderscorePrivateSubs]\n";
+    my %result;
+    foreach my $flavor ( sort keys %FLAVOR ) {
+        my $repo = repository( $flavor, %VARIABLES );
+        conformance($repo)->update;
+        spew( "$repo/.perlcriticrc", $old . slurp("$repo/.perlcriticrc") ) unless slurp("$repo/.perlcriticrc") =~ m/^\Q$old\E/m;
+
+        my ($check) = grep { $_->{check} eq 'CriticProfile' } @{ conformance($repo)->check };
+        conformance($repo)->update;
+        $result{$flavor} = [ $check->{status}, scalar( slurp("$repo/.perlcriticrc") =~ m/^\Q$old\E/m ) ? 'kept' : 'removed' ];
+    }
+
+    is_deeply( $result{'troglodyne-compat'}, [qw{fail removed}], 'a compat profile that still enables it fails, and the update removes it' );
+    is_deeply( $result{'troglodyne-5.040'},  [qw{pass kept}],    'while the strict template still enables it, so the strict profile keeps it' );
+};
+
 # The gates are only as good as what the hook makes of them, and a gate on a
 # skill whose plugin a clone cannot install refuses every edit it covers.
 subtest 'the scaffold gates its prose, and can install what the gates ask for' => sub {
