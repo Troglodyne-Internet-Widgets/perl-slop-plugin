@@ -56,6 +56,16 @@ my %ENFORCED_FROM = (
     'CodeLayout::RequireASCII'                 => '5.042',
 );
 
+# The policies whose fix needs a newer perl than the compat floor, and the
+# version that brings it.  Only the modern profile names them, because below
+# that version the fix is not there to ask for.
+my %FIX_NEEDS = (
+
+    # my sub.  The closure that it accepts below 5.026 is what
+    # ProhibitSingleUseLexicalSubs refuses where one place calls it.
+    'Subroutines::ProhibitUnderscorePrivateSubs' => '5.026',
+);
+
 my $modern = slurp("$TEMPLATES/perlcriticrc");
 my $compat = slurp("$TEMPLATES/perlcriticrc.compat");
 my $dist   = slurp("$TEMPLATES/dist.ini");
@@ -88,6 +98,10 @@ subtest 'the pair differs by the policies the language enforces' => sub {
         is( enables( $modern, $policy ), $modern_should, "the modern profile " . ( $modern_should ? 'keeps' : 'leaves out' ) . " $policy" );
         is( enables( $compat, $policy ), 1,              "the compat profile names $policy, because 5.014 does not" );
     }
+    foreach my $policy ( sort keys %FIX_NEEDS ) {
+        is( enables( $modern, $policy ), 1, "the modern profile names $policy" );
+        is( enables( $compat, $policy ), 0, "the compat profile leaves out $policy, whose fix needs $FIX_NEEDS{$policy}" );
+    }
 };
 
 subtest 'everything else in the pair is the same set' => sub {
@@ -99,8 +113,10 @@ subtest 'everything else in the pair is the same set' => sub {
 
     # The whole argument for two files is that they differ by the version, so a
     # policy in one and not the other is either a version difference or a
-    # mistake -- and a policy only the modern one has cannot be either.
-    is_deeply( \@only_modern, [], 'the modern profile asks nothing the compat profile does not' );
+    # mistake.  The modern profile has more only where the fix needs a perl
+    # above the compat floor.
+    is_deeply( [ sort @only_modern ], [ sort keys %FIX_NEEDS ], 'the modern profile asks nothing more than what the compat floor cannot fix' )
+      or diag( 'only in the modern profile: ' . join( ', ', @only_modern ) );
 
     my %in_modern = map { $_ => 1 } @modern_policies;
     my @only_compat = grep { !$in_modern{$_} } @compat_policies;

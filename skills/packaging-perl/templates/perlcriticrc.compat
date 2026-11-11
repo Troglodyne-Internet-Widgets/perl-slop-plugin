@@ -18,6 +18,14 @@
 #   InputOutput::ProhibitBarewordDirHandles       5.038
 #   Modules::RequireEndWithOne                  module_true from 5.038
 #
+# One policy of the other profile is not here: Subroutines::
+# ProhibitUnderscorePrivateSubs.  It wants a private sub to be my sub, which
+# arrived in 5.026, and below that a closure, my $name = sub.  But Subroutines::
+# ProhibitSingleUseLexicalSubs refuses a closure that one place calls, so on
+# 5.014 the two leave a helper no form but a public package sub, which then
+# needs POD.  A leading underscore is the one form left that is private by
+# name and works here.
+#
 # 5.014 is the floor rather than anything lower because RegularExpressions::
 # RequireDefault below wants /aa on every pattern, and /aa arrived in 5.14.  A
 # lower declaration is one the code does not keep.
@@ -91,7 +99,6 @@ formats = #!/usr/bin/env perl
 [RegularExpressions::ProhibitRegexToSplitAtDelimiter]
 [BuiltinFunctions::ProhibitChainingSameListSub]
 [RegularExpressions::ProhibitRegexForStringEquality]
-[Subroutines::ProhibitUnderscorePrivateSubs]
 [Subroutines::ProhibitSingleUseLexicalSubs]
 [ValuesAndExpressions::ProhibitLiteralArithmetic]
 [BuiltinFunctions::ProhibitIndirectBooleanGrep]
