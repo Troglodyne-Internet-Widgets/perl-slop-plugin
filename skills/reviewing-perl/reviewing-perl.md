@@ -76,6 +76,33 @@ Say what you searched for, in the commit message or the PR, when the answer was
 search -- which is the only way this gets caught, since by definition the code
 you missed is not in the diff a reviewer is reading either.
 
+### Before the tree, the libraries
+
+The search above looks in the tree.  Most wheels are reinvented against a
+library, not against the tree.  So ask the question of every block of logic
+that you wrote, not only of every new sub: a loop, a parse, a path that you
+build, a value that you work out.  Look in this order, and stop at the first
+answer:
+
+1. The core modules.  `corelist -a Module` says whether a module is core, and
+   `perldoc perlmodlib` lists them by job.
+2. The modules that the distribution already depends on: the prereqs in
+   `dist.ini`, `cpanfile` or `Makefile.PL`, and the POD of each module that the
+   file already loads.
+3. CPAN.  Search MetaCPAN for the job, not for your name for it.
+
+Read the return value of each call that the new code makes.  Some code works
+out what a call is about to do, or reads back what it just did.  That code
+usually repeats a value that the call returns.  A loop walked up from a path to find
+the highest directory that `make_path` was about to create.  `make_path`
+returns the directories that it creates, highest first.
+
+A construct that people seldom write is a signal.  Three examples are a
+`for (;;)` with no counter, a walk of a directory by hand, and a parse with a
+regex.  A library often does that job already.  Stop and run the three
+searches before you keep it.  If the answer was "nothing", say which of the
+three you searched, as the paragraph above says.
+
 ## Encapsulate
 
 - **Ask what owns the data.** Free subs in a script that take an object as their
