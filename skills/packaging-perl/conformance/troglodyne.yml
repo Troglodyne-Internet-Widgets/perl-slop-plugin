@@ -47,6 +47,9 @@ checks:
     hooks:
       pre-commit: templates/pre-commit
       post-commit: templates/post-commit
+      post-merge: templates/post-merge
+      post-rewrite: templates/post-rewrite
+      refresh-coverage: templates/refresh-coverage
     differ: info
     replace: false
     install: true

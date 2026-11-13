@@ -320,17 +320,30 @@ place, such as a fixture, runs every test. When a test reads a file without
 loading it, give the map a rule that names that test. `perldoc
 Perl::Tests::Covering` has the interface, under THE MAP.
 
-**`git-hooks/post-commit`** keeps the records of `tests-covering` up to date.
-After each commit, it runs the tests that the commit made stale under
-Devel::Cover, in the background. Without it, the records describe older files,
-and the choice of the pre-commit hook grows coarser with each commit. It does
-nothing while a rebase, or a cherry-pick or revert of several commits, applies
-commits. git runs the hook for each commit that it applies, and each run would
-start a refresh of its own. The first ordinary commit afterwards catches the
-records up. The records are kept under `~/.cache`, so the distribution gains no
-files.
+**`git-hooks/refresh-coverage`** keeps the records of `tests-covering` up to
+date. It runs the tests that a change made stale under Devel::Cover, in the
+background. Without it, the records describe older files, and the choice of the
+pre-commit hook grows coarser with each change. Three hooks run it, each after
+git changes the files:
 
-Both hooks run the tests without the `GIT_` variables that git sets for a hook.
+- **`post-commit`** runs it after each commit. It does nothing while a rebase,
+  or a cherry-pick or revert of several commits, applies commits. git runs the
+  hook for each commit that it applies, and each run starts a refresh of its
+  own.
+- **`post-merge`** runs it after a pull or a merge that changes the tree. That
+  includes a `pull --rebase` that only fast-forwards. A pull that changes
+  nothing runs no hook, and needs no refresh.
+- **`post-rewrite`**: when a rebase ends, including a `pull --rebase`, this
+  hook runs it once. git runs this hook while the state of the rebase is still
+  on disk. So it cannot go through `post-commit`, which does nothing at that
+  time. It ignores `commit --amend`, which runs `post-commit` as well.
+
+The records are kept under `~/.cache`, so the distribution gains no files. A new
+worktree has no records of its own. Until its first refresh, `tests-covering`
+0.003 and later reads the records of another checkout of the same repository.
+
+The pre-commit hook and `refresh-coverage` run the tests without the `GIT_`
+variables that git sets for a hook.
 git sets `GIT_INDEX_FILE` for a hook, and `GIT_DIR` as well in a worktree, and
 git obeys them over `-C`. So a test that runs git in a repository of its own
 would otherwise add, commit and write config in the repository being committed
