@@ -242,7 +242,8 @@ subtest 'the map says which files no test reads, and leaves the rest to the reco
         dist.ini weaver.ini prereqs.yml
         .perlcriticrc .perltidyrc .pod_stopwords .preferred_modules.ini .mailmap .gitignore .tests-covering-map.pl
         .conformance.yml .perl-slop.json .claude/settings.json
-        git-hooks/pre-commit git-hooks/post-commit .github/workflows/test.yml xt/author/critic.t
+        git-hooks/pre-commit git-hooks/post-commit git-hooks/post-merge git-hooks/post-rewrite git-hooks/refresh-coverage
+        .github/workflows/test.yml xt/author/critic.t
         }
     ) {
         is_deeply( [ $map->($path) ], [q{}], "$path reaches no test" );
@@ -255,7 +256,7 @@ subtest 'the map says which files no test reads, and leaves the rest to the reco
     }
 };
 
-subtest 'the post-commit hook refreshes the records after a commit, and not during a rebase' => sub {
+subtest 'the hooks refresh the records after a commit, a pull and a rebase, and not during a rebase' => sub {
     my $root = tempdir( CLEANUP => 1 );
     my $repo = "$root/repo";
     my $log  = "$root/refreshes";
@@ -269,43 +270,65 @@ subtest 'the post-commit hook refreshes the records after a commit, and not duri
     my $bin = hook_path(qq{echo "\$(git rev-parse HEAD) \$(env | sed -n 's/^\\(GIT_[A-Za-z0-9_]*\\)=.*/\\1/p' | tr '\\n' ' ')" >> '$log'\n});
     local $ENV{PATH} = $bin;
 
-    my $git = sub {
-        my (@args) = @_;
-        my $said = `git -C $repo -c user.name=Tester -c user.email=tester\@test.test @args 2>&1`;      ## no critic (ProhibitShellDispatch) -- git runs the hook, which is what is under test
+    # git in the repository $where.
+    my $git_in = sub {
+        my ( $where, @args ) = @_;
+        my $said = `git -C $where -c user.name=Tester -c user.email=tester\@test.test @args 2>&1`;    ## no critic (ProhibitShellDispatch) -- git runs the hook, which is what is under test
         die "git @args: $said" if $?;
         return $said;
     };
+    my $git    = sub { return $git_in->( $repo, @_ ) };
     my $commit = sub {
-        my ($file) = @_;
-        open( my $fh, '>', "$repo/$file" ) or die $!;
+        my ( $file, $where ) = @_;
+        $where //= $repo;
+        open( my $fh, '>', "$where/$file" ) or die $!;
         print {$fh} "$file\n";
         close($fh) or die $!;
-        $git->("add $file");
-        $git->("commit -q -m $file");
+        $git_in->( $where, "add $file" );
+        $git_in->( $where, "commit -q -m $file" );
         return;
     };
 
-    # The hook refreshes in the background, so this waits for the line for the
-    # commit at HEAD, and returns every line, which it then clears.
+    # The hooks refresh in the background, so this waits for the line for the
+    # commit at HEAD of $where, by default the repository.  A refresh that an
+    # earlier hook started can still be on its way, so it then waits until the
+    # log stops growing.  It returns every line, which it then clears.
     my $refreshed = sub {
-        chomp( my $head = $git->('rev-parse HEAD') );
+        my ($where) = @_;
+        chomp( my $head = $git_in->( $where // $repo, 'rev-parse HEAD' ) );
+        my $read = sub { return -e $log ? split /\n/, slurp($log) : () };
         my @lines;
         my $tries = 200;
         while ( $tries-- ) {
-            @lines = -e $log ? split /\n/, slurp($log) : ();
+            @lines = $read->();
             last if any { index( $_, $head ) == 0 } @lines;
             select( undef, undef, undef, 0.05 );    ## no critic (ProhibitSleepViaSelect) -- core-only, and Time::HiRes is not needed for a poll
+        }
+        my $seen = -1;
+        while ( @lines != $seen ) {
+            $seen = @lines;
+            select( undef, undef, undef, 0.3 );     ## no critic (ProhibitSleepViaSelect) -- core-only, and Time::HiRes is not needed for a poll
+            @lines = $read->();
         }
         unlink $log;
         return @lines;
     };
 
+    # The hooks that refresh, into the hooks of the repository $where.
+    my $install = sub {
+        my ($where) = @_;
+        foreach my $hook (qw{post-commit post-merge post-rewrite refresh-coverage}) {
+            open( my $fh, '>', "$where/.git/hooks/$hook" ) or die $!;
+            print {$fh} slurp("$TEMPLATES/$hook");
+            close($fh) or die $!;
+            chmod 0755, "$where/.git/hooks/$hook";
+        }
+        return;
+    };
+
     $git->('init -q');
     mkdir "$repo/.git/hooks";
-    open( my $fh, '>', "$repo/.git/hooks/post-commit" ) or die $!;
-    print {$fh} slurp("$TEMPLATES/post-commit");
-    close($fh) or die $!;
-    chmod 0755, "$repo/.git/hooks/post-commit";
+    $install->($repo);
 
     $commit->('a');
     my @lines = $refreshed->();
@@ -321,8 +344,33 @@ subtest 'the post-commit hook refreshes the records after a commit, and not duri
     $refreshed->();
 
     $git->("rebase -q $main topic");
+    is( scalar( () = $refreshed->() ), 1, 'three commits rebased, and refreshed once, by post-rewrite when the rebase ends' );
     $commit->('c');
-    is( scalar( () = $refreshed->() ), 1, 'three commits rebased, and only the commit after them is refreshed' );
+    is( scalar( () = $refreshed->() ), 1, 'and the commit after them once' );
+
+    open( my $fh, '>', "$repo/c" ) or die $!;
+    print {$fh} "amended\n";
+    close($fh) or die $!;
+    $git->('commit -q -a --amend --no-edit');
+    is( scalar( () = $refreshed->() ), 1, 'an amend is refreshed once, by post-commit, and not again by post-rewrite' );
+
+    # A clone that pulls from the repository, with the hooks installed.
+    my $clone = "$root/clone";
+    $git_in->( $root, "clone -q -b $main $repo $clone" );
+    $install->($clone);
+
+    $git->("switch -q $main");
+    $commit->('f');
+    $refreshed->();
+    $git_in->( $clone, 'pull -q --no-rebase' );
+    is( scalar( () = $refreshed->($clone) ), 1, 'a pull that fast-forwards is refreshed once, by post-merge' );
+
+    $commit->('g');
+    $refreshed->();
+    $commit->( 'h', $clone );
+    $refreshed->($clone);
+    $git_in->( $clone, 'pull -q --rebase' );
+    is( scalar( () = $refreshed->($clone) ), 1, 'and a pull --rebase over a local commit once, by post-rewrite' );
 };
 
 subtest 'the tests the hook runs get none of the variables that point git at the repository' => sub {

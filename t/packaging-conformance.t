@@ -59,6 +59,9 @@ my %WRITES = (
     'mailmap'               => '.mailmap',
     'pre-commit'            => 'git-hooks/pre-commit',
     'post-commit'           => 'git-hooks/post-commit',
+    'post-merge'            => 'git-hooks/post-merge',
+    'post-rewrite'          => 'git-hooks/post-rewrite',
+    'refresh-coverage'      => 'git-hooks/refresh-coverage',
     'tests-covering-map.pl' => '.tests-covering-map.pl',
     'CLAUDE.md'             => 'CLAUDE.md',
     'perl-slop.json'        => '.perl-slop.json',
@@ -138,7 +141,7 @@ foreach my $flavor ( sort keys %FLAVOR ) {
         }
         like( slurp("$repo/prereqs.yml"), qr/^\s+perl:\s*'\Q$want->{floor}\E'$/m, "prereqs.yml requires perl $want->{floor}" );
 
-        foreach my $hook (qw{pre-commit post-commit}) {
+        foreach my $hook (qw{pre-commit post-commit post-merge post-rewrite refresh-coverage}) {
             ok( -x "$repo/git-hooks/$hook", "git-hooks/$hook is executable" );    ## no critic (ValuesAndExpressions::ProhibitFiletest_rwxRWX) -- the mode bit is what git asks of a hook, and what the flavor must set
             is( slurp("$repo/.git/hooks/$hook"), slurp("$repo/git-hooks/$hook"), "and installed in .git/hooks" );
         }

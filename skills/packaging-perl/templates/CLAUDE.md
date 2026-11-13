@@ -60,8 +60,9 @@ script that no test loads, because the tests do not compile it.
 
 The pre-commit hook does the rest.  It tidies the Perl that you staged, runs
 perlcritic on it, and runs the tests that the commit can break, which
-`tests-covering` chooses.  The post-commit hook keeps the records of
-`tests-covering` up to date, in the background.  If a step fails, the hook stops the
+`tests-covering` chooses.  The post-commit, post-merge and post-rewrite hooks
+keep the records of `tests-covering` up to date, in the background, after a
+commit, a pull and a rebase.  If a step fails, the hook stops the
 commit and prints the reason.  Do not run `perltidy` or `perlcritic` yourself,
 and do not run the tests to decide whether a change is ready to commit.
 
@@ -74,11 +75,12 @@ prove -lv t/<file>.t
 
 Do the same to see a new test fail before you fix what it tests.
 
-In each clone that you commit from, install both hooks once.  Git does not
+In each clone that you commit from, install the hooks once.  Git does not
 install them for you, and without the hooks the tree drifts from its style:
 
 ```
-cp git-hooks/pre-commit git-hooks/post-commit .git/hooks/
+cp git-hooks/pre-commit git-hooks/post-commit git-hooks/post-merge \
+   git-hooks/post-rewrite git-hooks/refresh-coverage .git/hooks/
 ```
 
 A file that no test loads, such as a fixture, gets its tests from
