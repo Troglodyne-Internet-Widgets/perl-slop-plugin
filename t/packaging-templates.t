@@ -1,21 +1,21 @@
 #!/usr/bin/env perl
 use 5.014;
 use strict;
-use warnings;
-use re '/aa';
+use warnings FATAL => 'all';
+use re '/aasx';
 
 =head1 NAME
 
-t/packaging-templates.t - the templates the packaging-perl skill scaffolds
+t/packaging-templates.t - the templates the C<packaging-perl> skill scaffolds
 with, and the hooks among them
 
 =head1 DESCRIPTION
 
-There are two profiles because the perl a distribution targets decides how
-strict it can be.  What makes them a pair rather than two files is that one
+There are two profiles because the version of Perl that a distribution targets
+decides how strict it can be.  What makes them a pair rather than two files is that one
 leaves out exactly the policies the language enforces and the other names them,
-so the thing worth asserting is that relationship -- and that dist.ini and the
-evals still agree with it.
+so the thing worth asserting is that relationship -- and that F<dist.ini> and the
+evaluations in F<evals/> still agree with it.
 
 Whether Claude, following the skill, puts these templates into a distribution
 intact is a question about what Claude does, and F<t/release-evals.t> asks it.
@@ -23,7 +23,7 @@ Nothing here reads the skill's own prose.
 
 Core-only on purpose: this asserts on the text of the templates, so it runs
 wherever the plugin does rather than only where Perl::Critic and twenty policy
-distributions are installed.  The exceptions run the pre-commit hook, with git
+distributions are installed.  The exceptions run the C<pre-commit> hook, with git
 and sh, on commits that give perltidy and perlcritic nothing to judge.
 
 =cut
@@ -31,6 +31,7 @@ and sh, on commits that give perltidy and perlcritic nothing to judge.
 use Test::More;
 use File::Temp qw{tempdir};
 use FindBin;
+use List::Util qw{any};
 
 my $SKILL     = "$FindBin::Bin/../skills/packaging-perl";
 my $TEMPLATES = "$SKILL/templates";
@@ -40,7 +41,7 @@ sub slurp {
     open( my $fh, '<', $path ) or die "$path: $!";
     local $/ = undef;
     my $text = <$fh>;
-    close($fh);
+    close($fh) or die "$path: $!";
     return $text;
 }
 
@@ -108,7 +109,7 @@ subtest 'everything else in the pair is the same set' => sub {
     my @modern_policies = $modern =~ m/^\[([^\]]+)\]$/gm;
     my @compat_policies = $compat =~ m/^\[([^\]]+)\]$/gm;
 
-    my %in_compat = map { $_ => 1 } @compat_policies;
+    my %in_compat   = map  { $_ => 1 } @compat_policies;
     my @only_modern = grep { !$in_compat{$_} } @modern_policies;
 
     # The whole argument for two files is that they differ by the version, so a
@@ -118,7 +119,7 @@ subtest 'everything else in the pair is the same set' => sub {
     is_deeply( [ sort @only_modern ], [ sort keys %FIX_NEEDS ], 'the modern profile asks nothing more than what the compat floor cannot fix' )
       or diag( 'only in the modern profile: ' . join( ', ', @only_modern ) );
 
-    my %in_modern = map { $_ => 1 } @modern_policies;
+    my %in_modern   = map  { $_ => 1 } @modern_policies;
     my @only_compat = grep { !$in_modern{$_} } @compat_policies;
     my @unexplained = grep { !exists $ENFORCED_FROM{$_} } @only_compat;
 
@@ -152,7 +153,7 @@ subtest 'the hook judges what it tidied, with the profile that was copied' => su
 
     like( $test_pass, qr/--exclude\s+Documentation::RequirePod/, 't/ is judged without the POD requirement' );
     like( $test_pass, qr/--profile\s+\.perlcriticrc/,            'and by the same profile as everything else' );
-    unlike( $lib_pass, qr/--exclude/,                            'while a module is still asked for its POD' );
+    unlike( $lib_pass, qr/--exclude/, 'while a module is still asked for its POD' );
 };
 
 # A PATH that holds only the tools the hooks use, so that whether tests-covering
@@ -162,7 +163,7 @@ sub hook_path {
     my ($covering) = @_;
     my $bin = tempdir( CLEANUP => 1 );
     foreach my $tool (qw{git sh sed env prove perl head grep nproc tr}) {
-        my ($found) = grep { -x "$_/$tool" } split /:/, $ENV{PATH};
+        my ($found) = grep { -x "$_/$tool" } split /:/, $ENV{PATH};    ## no critic (ValuesAndExpressions::ProhibitFiletest_rwxRWX) -- the mode bit is how a shell finds a program on PATH, and this finds it as the shell of the hook will
         symlink( "$found/$tool", "$bin/$tool" ) or die "$tool: $!" if defined $found;
     }
     if ( defined $covering ) {
@@ -186,8 +187,8 @@ sub commit_readme {
         print {$fh} $tests{$name} // "words\n";
         close($fh) or die $!;
     }
-    system( 'git', '-C', $root, 'init', '-q' ) == 0 or die 'git init';      ## no critic (ProhibitShellDispatch) -- the hook reads a real index
-    system( 'git', '-C', $root, 'add', 'README' ) == 0 or die 'git add';    ## no critic (ProhibitShellDispatch)
+    system( 'git', '-C', $root, 'init', '-q' ) == 0     or die 'git init';    ## no critic (ProhibitShellDispatch) -- the hook reads a real index
+    system( 'git', '-C', $root, 'add',  'README' ) == 0 or die 'git add';     ## no critic (ProhibitShellDispatch)
     local $ENV{PATH} = $bin;
     my $out = `cd $root && sh $TEMPLATES/pre-commit 2>&1`;                    ## no critic (ProhibitShellDispatch) -- run the way git runs it
     return ( $? >> 8, $out );
@@ -243,8 +244,7 @@ subtest 'the map says which files no test reads, and leaves the rest to the reco
         .conformance.yml .perl-slop.json .claude/settings.json
         git-hooks/pre-commit git-hooks/post-commit .github/workflows/test.yml xt/author/critic.t
         }
-      )
-    {
+    ) {
         is_deeply( [ $map->($path) ], [q{}], "$path reaches no test" );
     }
 
@@ -271,7 +271,7 @@ subtest 'the post-commit hook refreshes the records after a commit, and not duri
 
     my $git = sub {
         my (@args) = @_;
-        my $said = `git -C $repo -c user.name=Tester -c user.email=tester\@test.test @args 2>&1`;    ## no critic (ProhibitShellDispatch) -- git runs the hook, which is what is under test
+        my $said = `git -C $repo -c user.name=Tester -c user.email=tester\@test.test @args 2>&1`;      ## no critic (ProhibitShellDispatch) -- git runs the hook, which is what is under test
         die "git @args: $said" if $?;
         return $said;
     };
@@ -290,9 +290,10 @@ subtest 'the post-commit hook refreshes the records after a commit, and not duri
     my $refreshed = sub {
         chomp( my $head = $git->('rev-parse HEAD') );
         my @lines;
-        foreach ( 1 .. 200 ) {
+        my $tries = 200;
+        while ( $tries-- ) {
             @lines = -e $log ? split /\n/, slurp($log) : ();
-            last if grep { index( $_, $head ) == 0 } @lines;
+            last if any { index( $_, $head ) == 0 } @lines;
             select( undef, undef, undef, 0.05 );    ## no critic (ProhibitSleepViaSelect) -- core-only, and Time::HiRes is not needed for a poll
         }
         unlink $log;
@@ -313,7 +314,7 @@ subtest 'the post-commit hook refreshes the records after a commit, and not duri
 
     my ($main) = $git->('branch --show-current') =~ m/(\S+)/;
     $git->('switch -q -c topic');
-    $commit->($_) for qw{t1 t2 t3};
+    foreach my $file (qw{t1 t2 t3}) { $commit->($file) }
     $refreshed->();
     $git->("switch -q $main");
     $commit->('b');
@@ -336,18 +337,20 @@ subtest 'the tests the hook runs get none of the variables that point git at the
 
     my $git = sub {
         my ( $dir, @args ) = @_;
-        return system( 'git', '-C', $dir, '-c', 'user.name=Tester', '-c', 'user.email=tester@test.test', @args );    ## no critic (ProhibitShellDispatch) -- git runs the hook, which is what is under test
+        return system( qw{git -C}, $dir, qw{-c user.name=Tester -c user.email=tester@test.test}, @args );
     };
 
     # Fails on any of those variables, and commits in a repository of its own,
     # which is what the variables would redirect.
-    my $probe = join( "\n",
+    my $probe = join(
+        "\n",
         'use strict; use warnings; use Test::More; use File::Temp qw{tempdir};',
         'my @set = grep { exists $ENV{$_} } split /\n/, `git rev-parse --local-env-vars`;',
         q{is( "@set", '', 'no variable points git at the repository being committed to' );},
         'my $inner = tempdir( CLEANUP => 1 );',
         q{system("git -C $inner init -q && echo x > $inner/x && git -C $inner add x && git -C $inner -c user.name=t -c user.email=t\@test.test commit -q -m inner");},
-        'done_testing;', q{} );
+        'done_testing;', q{}
+    );
 
     my $write = sub {
         my ( $path, $text ) = @_;
@@ -359,24 +362,24 @@ subtest 'the tests the hook runs get none of the variables that point git at the
 
     my $root = tempdir( CLEANUP => 1 );
     my $repo = "$root/repo";
-    mkdir $repo or die $!;
+    mkdir $repo                        or die $!;
     $git->( $repo, 'init', '-q' ) == 0 or die 'git init';
-    mkdir "$repo/t" or die $!;
-    $write->( "$repo/t/env.t", $probe );
+    mkdir "$repo/t"                    or die $!;
+    $write->( "$repo/t/env.t",               $probe );
     $write->( "$repo/.git/hooks/pre-commit", slurp("$TEMPLATES/pre-commit") );
     chmod 0755, "$repo/.git/hooks/pre-commit";
 
     # A README, so that what decides the commit is the suite alone.
     $write->( "$repo/README", "words\n" );
     $git->( $repo, 'add', 'README' ) == 0 or die 'git add';
-    is( $git->( $repo, 'commit', '-q', '-m', 'in the checkout' ), 0, 'a commit in the checkout passes' );
+    is( $git->( $repo, qw{commit -q -m}, 'in the checkout' ), 0, 'a commit in the checkout passes' );
 
-    $git->( $repo, 'worktree', 'add', '-q', "$root/wt", '-b', 'wt' ) == 0 or die 'git worktree add';
-    mkdir "$root/wt/t" or die $!;
+    $git->( $repo, qw{worktree add -q}, "$root/wt", qw{-b wt} ) == 0 or die 'git worktree add';
+    mkdir "$root/wt/t"                                               or die $!;
     $write->( "$root/wt/t/env.t", $probe );
-    $write->( "$root/wt/README",   "more words\n" );
+    $write->( "$root/wt/README",  "more words\n" );
     $git->( "$root/wt", 'add', 'README' ) == 0 or die 'git add';
-    is( $git->( "$root/wt", 'commit', '-q', '-m', 'in a worktree' ), 0, 'and so does a commit in a worktree' );
+    is( $git->( "$root/wt", qw{commit -q -m}, 'in a worktree' ), 0, 'and so does a commit in a worktree' );
 
     my @inner = grep { index( $_, q{inner} ) >= 0 } `git -C $repo log --all --format=%s`;    ## no critic (ProhibitShellDispatch)
     is( scalar @inner, 0, 'and what the test committed stayed in its own repository' );
@@ -396,13 +399,13 @@ subtest 'what the profiles read is scaffolded and shipped' => sub {
 
     # weaver.ini's licence text is in every built module, and aspell knows none
     # of these, so a stopword list without them fails every new distribution.
-    my %stop = map { $_ => 1 } grep { length && !m/^#/ } split /\n/, slurp("$TEMPLATES/pod_stopwords");
-    ok( $stop{$_}, "the stopword list has $_, from the generated licence text" ) foreach qw{MERCHANTABILITY NONINFRINGEMENT sublicense};
+    my %stop = map { $_ => 1 } grep { $_ && !m/^[#]/ } split /\n/, slurp("$TEMPLATES/pod_stopwords");
+    foreach my $word (qw{MERCHANTABILITY NONINFRINGEMENT sublicense}) { ok( $stop{$word}, "the stopword list has $word, from the generated licence text" ) }
     ok( $stop{bugtracker}, 'and bugtracker, which no dictionary has' );
 
     # Sorted without regard to case and once each, as the file's header says, so
     # that adding a word is a one-line diff.
-    my @words = grep { length && !m/^#/ } split /\n/, slurp("$TEMPLATES/pod_stopwords");
+    my @words  = grep { $_ && !m/^[#]/ } split /\n/, slurp("$TEMPLATES/pod_stopwords");
     my @sorted = sort { lc $a cmp lc $b or $a cmp $b } @words;
     is_deeply( \@words, \@sorted, 'the stopword list is sorted' );
     is( scalar( keys %stop ), scalar @words, 'and has each word once' );
@@ -414,12 +417,12 @@ subtest 'what the profiles read is scaffolded and shipped' => sub {
 
     # aspell is asked for American English, so a British spelling is one the
     # POD should not be using in the first place.
-    my @british = grep { m/is(?:e|es|ed|ing|ation)$/ && $stop{ ( my $us = $_ ) =~ s/is(e|es|ed|ing|ation)$/iz$1/r } } @words;
+    my @british = grep { m/is(?:e|es|ed|ing|ation)$/ && $stop{s/is(e|es|ed|ing|ation)$/iz$1/r} } @words;
     is_deeply( \@british, [], 'and no British spelling of a word it has in American' );
 
     # Every policy outside Perl::Critic's own distribution needs a line, or a
     # fresh clone cannot install what the profile names.
-    foreach my $policy ( 'ProhibitPrintSTDERR', 'Variables::ProhibitUnusedVarsStricter', 'RegularExpressions::PreventUselessMetacharacterEscapes', 'ValuesAndExpressions::ProhibitLiteralArithmetic', 'RegularExpressions::ProhibitIneffectiveModifiers', 'RegularExpressions::ProhibitRegexToSplitAtDelimiter', 'Variables::ProhibitTopicIterator', 'ValuesAndExpressions::RequireSlices', 'Variables::RequireNoAutovivification' ) {
+    foreach my $policy (qw{ProhibitPrintSTDERR Variables::ProhibitUnusedVarsStricter RegularExpressions::PreventUselessMetacharacterEscapes ValuesAndExpressions::ProhibitLiteralArithmetic RegularExpressions::ProhibitIneffectiveModifiers RegularExpressions::ProhibitRegexToSplitAtDelimiter Variables::ProhibitTopicIterator ValuesAndExpressions::RequireSlices Variables::RequireNoAutovivification}) {
         like( $dist, qr/authordep\s+Perl::Critic::Policy::\Q$policy\E/, "dist.ini declares the authordep for $policy" );
     }
 
@@ -440,7 +443,7 @@ subtest 'the preferred modules prefer Readonly to use constant' => sub {
     my ($section) = $ini =~ m/^\[constant\]\n((?:[^\[\n][^\n]*\n)*)/m;
     ok( defined $section, 'the template has a [constant] section' ) or return;
     like( $section, qr/^prefer\s*=\s*Readonly\s*$/m, 'and it prefers Readonly' );
-    like( $section, qr/^reason\s*=/m,                  'and says why' );
+    like( $section, qr/^reason\s*=/m,                'and says why' );
 };
 
 # Carp adds the file and line to a message that ends in a newline, so the
@@ -451,7 +454,7 @@ subtest 'the preferred modules ban Carp' => sub {
     my ($section) = $ini =~ m/^\[Carp\]\n((?:[^\[\n][^\n]*\n)*)/m;
     ok( defined $section, 'the template has a [Carp] section' ) or return;
     unlike( $section, qr/^prefer\s*=/m, 'and names no module to use instead' );
-    like( $section, qr/^reason\s*=.*\bdie\b/m, 'and says to die instead' );
+    like( $section, qr/^reason\s*=\N*\bdie\b/m, 'and says to die instead' );
 };
 
 # The builtin flock lets go of its lock only when its handle closes, so code
@@ -477,14 +480,16 @@ subtest 'the preferred modules ban the builtin flock' => sub {
 # Both options are off by default, and a policy section without them reports
 # only a sub that the policy can read.
 subtest 'both profiles turn on the call reports of the Stricter policy' => sub {
+    my $policy  = 'ControlStructures::ProhibitMutatingListFunctionsStricter';
+    my $heading = qr/^\[\Q$policy\E\]\n/m;
     foreach my $profile ( [ perlcriticrc => $modern ], [ 'perlcriticrc.compat' => $compat ] ) {
         my ( $name, $text ) = @$profile;
-        my ($section) = $text =~ m/^\[ControlStructures::ProhibitMutatingListFunctionsStricter\]\n((?:[^\[\n][^\n]*\n)*)/m;
+        my ($section) = $text =~ m/$heading((?:[^\[\n]\N*\n)*)/;
         ok( defined $section, "$name enables ProhibitMutatingListFunctionsStricter" ) or next;
         like( $section, qr/^report_unresolved_calls\s*=\s*1$/m,  "and reports a call that it cannot read in a list function block" );
         like( $section, qr/^report_postfix_for_calls\s*=\s*1$/m, "and a call before a postfix for" );
     }
-    like( $dist, qr/authordep\s+Perl::Critic::Policy::ControlStructures::ProhibitMutatingListFunctionsStricter\s+=\s+0[.]003$/m, 'dist.ini asks for the version that judges a call only where $_ is the caller\'s' );
+    like( $dist, qr/authordep\s+Perl::Critic::Policy::\Q$policy\E\s+=\s+0[.]003$/m, 'dist.ini asks for the version that judges a call only where $_ is the caller\'s' );
 };
 
 subtest 'the version dzil stamps is not code above use strict' => sub {
@@ -508,9 +513,9 @@ subtest 'the perl floor is written where PrereqsFile reads it' => sub {
     my $prereqs = slurp("$TEMPLATES/prereqs.yml");
     like( $prereqs, qr/^\s+perl:\s*'\{\{PERL_FLOOR\}\}'$/m, 'the template declares the perl floor' );
 
-    foreach my $file ( map {"$TEMPLATES/$_"} qw{CLAUDE.md perlcriticrc perlcriticrc.compat} ) {
+    foreach my $file ( map { "$TEMPLATES/$_" } qw{CLAUDE.md perlcriticrc perlcriticrc.compat} ) {
         my $text = slurp($file);
-        my @told = $text =~ m/(prereqs\.yaml)(?![^\n]*not an alternative)/g;
+        my @told = $text =~ m/(prereqs\.yaml)(?![^\n]*not[ ]an[ ]alternative)/g;
         is( scalar @told, 0, "$file tells nobody to write prereqs.yaml" );
     }
 };
@@ -521,20 +526,20 @@ subtest 'the gitignore hides the build of the distribution and not its tests' =>
     my @local = split /\n/, `git rev-parse --local-env-vars`;    ## no critic (ProhibitShellDispatch) -- git is what names them
     local @ENV{@local};
     delete @ENV{@local};
-    system( qw{git init -q}, $repo ) == 0 or die "git init failed\n";
+    system( qw{git init -q}, $repo ) == 0 or die "git init failed\n";    ## no critic (logicLAB::ProhibitShellDispatch) -- git makes the repository whose ignore rules are under test
 
     ( my $ignore = slurp("$TEMPLATES/gitignore") ) =~ s/\{\{DIST\}\}/Foo-Bar/g;
     open( my $fh, '>', "$repo/.gitignore" ) or die "$repo/.gitignore: $!";
     print {$fh} $ignore;
-    close($fh);
+    close($fh) or die "$repo/.gitignore: $!";
 
     my $ignored = sub {
         my ($path) = @_;
         return system( qw{git -C}, $repo, qw{check-ignore -q --no-index}, $path ) == 0 ? 1 : 0;
     };
-    ok( $ignored->('Foo-Bar-0.001.tar.gz'), 'the tarball that dzil build leaves at the root' );
-    ok( $ignored->('Foo-Bar-0.001/Makefile.PL'), 'and the directory it builds in' );
-    ok( !$ignored->('t/Foo-Bar-Baz.t'), 'but not a test named after the distribution' );
+    ok( $ignored->('Foo-Bar-0.001.tar.gz'),       'the tarball that dzil build leaves at the root' );
+    ok( $ignored->('Foo-Bar-0.001/Makefile.PL'),  'and the directory it builds in' );
+    ok( !$ignored->('t/Foo-Bar-Baz.t'),           'but not a test named after the distribution' );
     ok( !$ignored->('lib/Foo/Foo-Bar-notes.pod'), 'nor any other file whose name starts with it' );
 };
 

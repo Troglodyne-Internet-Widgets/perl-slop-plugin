@@ -1,13 +1,13 @@
 #!/usr/bin/env perl
 use 5.014;
 use strict;
-use warnings;
-use re '/aa';
+use warnings FATAL => 'all';
+use re '/aasx';
 
 =head1 NAME
 
 t/packaging-conformance.t - the flavors that scaffold a distribution from the
-packaging-perl templates
+C<packaging-perl> templates
 
 =head1 DESCRIPTION
 
@@ -24,9 +24,10 @@ It skips where Dist::Conformance is not installed.
 use Test::More;
 use File::Temp qw{tempdir};
 use FindBin;
+use File::Glob ();
 
 BEGIN {
-    eval { require Dist::Conformance; 1 } or plan skip_all => 'Dist::Conformance is not installed';
+    eval { require Dist::Conformance;                        1 } or plan skip_all => 'Dist::Conformance is not installed';
     eval { require Dist::Conformance::Check::SystemPackages; 1 } or plan skip_all => 'Dist::Conformance is too old to have the check SystemPackages, which the flavors run';
     eval { require Dist::Conformance::Check::RefusedIniKeys; 1 } or plan skip_all => 'Dist::Conformance is too old to have the check RefusedIniKeys, which the flavors run';
 }
@@ -74,7 +75,7 @@ sub slurp {
     open( my $fh, '<', $path ) or die "$path: $!";
     local $/ = undef;
     my $text = <$fh>;
-    close($fh);
+    close($fh) or die "$path: $!";
     return $text;
 }
 
@@ -91,7 +92,7 @@ sub spew {
 sub repository {
     my ( $flavor, %variables ) = @_;
     my $repo = tempdir( CLEANUP => 1 );
-    system( qw{git init -q}, $repo ) == 0 or die "git init failed\n";
+    system( qw{git init -q}, $repo ) == 0 or die "git init failed\n";    ## no critic (logicLAB::ProhibitShellDispatch) -- Dist::Conformance runs in a git repository, and git makes one
     spew(
         "$repo/.conformance.yml",
         join "\n",
@@ -100,7 +101,7 @@ sub repository {
         '  git: https://github.com/Troglodyne-Internet-Widgets/perl-slop-plugin.git',
         '  path: skills/packaging-perl',
         'variables:',
-        ( map {"  $_: '$variables{$_}'"} sort keys %variables ),
+        ( map { "  $_: '$variables{$_}'" } sort keys %variables ),
         q{}
     );
     return $repo;
@@ -131,14 +132,14 @@ foreach my $flavor ( sort keys %FLAVOR ) {
         foreach my $template ( sort( keys %WRITES ), $want->{profile} ) {
             my $path = $WRITES{$template} // '.perlcriticrc';
             ( my $expected = slurp("$TEMPLATES/$template") ) =~ s/\{\{(\w+)\}\}/$vars{$1} \/\/ "{{$1}}"/ge;
-            ok( -f "$repo/$path", "$path is written" ) or next;
+            ok( -e "$repo/$path", "$path is written" ) or next;
             is( slurp("$repo/$path"), $expected, "$path is $template with its placeholders filled in" );
             $written{$template} = 1;
         }
         like( slurp("$repo/prereqs.yml"), qr/^\s+perl:\s*'\Q$want->{floor}\E'$/m, "prereqs.yml requires perl $want->{floor}" );
 
         foreach my $hook (qw{pre-commit post-commit}) {
-            ok( -x "$repo/git-hooks/$hook", "git-hooks/$hook is executable" );
+            ok( -x "$repo/git-hooks/$hook", "git-hooks/$hook is executable" );    ## no critic (ValuesAndExpressions::ProhibitFiletest_rwxRWX) -- the mode bit is what git asks of a hook, and what the flavor must set
             is( slurp("$repo/.git/hooks/$hook"), slurp("$repo/git-hooks/$hook"), "and installed in .git/hooks" );
         }
 
@@ -151,9 +152,7 @@ foreach my $flavor ( sort keys %FLAVOR ) {
 }
 
 subtest 'every template is scaffolded by a flavor' => sub {
-    opendir( my $dh, $TEMPLATES ) or die "$TEMPLATES: $!";
-    my @templates = sort grep { -f "$TEMPLATES/$_" } readdir $dh;
-    closedir $dh;
+    my @templates = sort map { s{\A.*/}{}r } grep { !-d } File::Glob::bsd_glob("$TEMPLATES/*");
     is_deeply( [ grep { !$written{$_} } @templates ], [], 'no template is left for a person to copy' );
 };
 
@@ -169,12 +168,12 @@ subtest '.perl-slop.json holds only what the hooks read' => sub {
     };
 
     is( $config_status->('{"before_edit":{"lib/**":["writing-recipes"]},"before_commit":{"templates/**":["provisioning-recipes"]}}'), 'pass', 'the example of the README passes' );
-    is( $config_status->('{"before_edit":{"lib/**":"writing-recipes"}}'), 'pass', 'and so does one skill without a list, which the hook also reads' );
-    is( $config_status->('{"before_commit":{"docs/**":["simple-english:simple-english"]}}'), 'pass', 'and a skill of another plugin, by its full name' );
-    is( $config_status->('{"before_comit":{"lib/**":["x"]}}'),             'fail', 'a misspelled gate fails' );
-    is( $config_status->('{"before_edit":["writing-recipes"]}'),           'fail', 'and so does a gate that is not a map of globs' );
-    is( $config_status->('{"before_edit":{"lib/**":[{"name":"x"}]}}'),   'fail', 'or a skill that is not a name' );
-    is( $config_status->('{"before_edit":'),                               'fail', 'or a file that is not JSON' );
+    is( $config_status->('{"before_edit":{"lib/**":"writing-recipes"}}'),                                                             'pass', 'and so does one skill without a list, which the hook also reads' );
+    is( $config_status->('{"before_commit":{"docs/**":["simple-english:simple-english"]}}'),                                          'pass', 'and a skill of another plugin, by its full name' );
+    is( $config_status->('{"before_comit":{"lib/**":["x"]}}'),                                                                        'fail', 'a misspelled gate fails' );
+    is( $config_status->('{"before_edit":["writing-recipes"]}'),                                                                      'fail', 'and so does a gate that is not a map of globs' );
+    is( $config_status->('{"before_edit":{"lib/**":[{"name":"x"}]}}'),                                                                'fail', 'or a skill that is not a name' );
+    is( $config_status->('{"before_edit":'),                                                                                          'fail', 'or a file that is not JSON' );
 };
 
 # [GithubMeta] takes the account from the origin remote, and user overrides it,
@@ -184,16 +183,17 @@ subtest 'dist.ini lets [GithubMeta] take the account from the remote' => sub {
     my $result = sub {
         my ($ini) = @_;
         spew( "$repo/dist.ini", $ini );
-        my ($result) = grep { $_->{check} eq 'GithubMetaFromRemote' } @{ conformance($repo)->check };
-        return $result;
+        my ($check) = grep { $_->{check} eq 'GithubMetaFromRemote' } @{ conformance($repo)->check };
+        return $check;
     };
 
     is( $result->("name = Foo-Bar\n[GithubMeta]\nissues = 1\n")->{status}, 'pass', 'a [GithubMeta] without user passes' );
     my $user = $result->("name = Foo-Bar\n[GithubMeta]\nissues = 1\nuser = someone\n");
     is( $user->{status}, 'fail', 'and one with user fails' );
-    like( $user->{detail}, qr{user in \[GithubMeta\], which overrides the account in the URL of the origin remote}, 'and says why' );
+    my $why = 'user in [GithubMeta], which overrides the account in the URL of the origin remote';
+    like( $user->{detail}, qr/\Q$why\E/, 'and says why' );
     is( $result->("[GithubMeta / Meta]\nuser = someone\n")->{status}, 'fail', 'and so does a [GithubMeta] with a name of its own' );
-    is( $result->("[Run::Test]\nrun = a\nrun = b\n")->{status},     'pass', 'a dist.ini without [GithubMeta] passes' );
+    is( $result->("[Run::Test]\nrun = a\nrun = b\n")->{status},       'pass', 'a dist.ini without [GithubMeta] passes' );
 
     $result->("name = Foo-Bar\n; the metadata\n[GithubMeta]\nissues = 1\nuser = someone\nhomepage = https://test.test/\n");
     my ($update) = grep { $_->{check} eq 'GithubMetaFromRemote' } @{ conformance($repo)->update };
@@ -237,8 +237,11 @@ subtest 'the scaffold gates its prose, and can install what the gates ask for' =
         is_deeply( [ PerlSlop::SkillGates::configured( $repo, 'before_edit', $path ) ], [], "an edit of $path does not" );
     }
 
-    my $settings = PerlSlop::SkillGates::read_json( do { open( my $fh, '<', "$repo/.claude/settings.json" ) or die "settings: $!"; $fh } );
-    my @enabled  = sort grep { $settings->{enabledPlugins}{$_} } keys %{ $settings->{enabledPlugins} };
+    open( my $fh, '<', "$repo/.claude/settings.json" ) or die "settings: $!";
+    my $settings = PerlSlop::SkillGates::read_json($fh);
+    close($fh) or die "settings: $!";
+    my $plugins = $settings->{enabledPlugins} // {};
+    my @enabled = sort grep { $plugins->{$_} } keys %$plugins;
     is_deeply( \@enabled, [qw{perl-slop@troglodyne-marketplace simple-english@simple-english}], 'the settings enable perl-slop and simple-english' );
     foreach my $plugin (@enabled) {
         my ($marketplace) = $plugin =~ m/\@(.+)\z/;
@@ -258,14 +261,14 @@ subtest 'metamerge.yml declares system packages that a packager can install' => 
         return $result->{status};
     };
 
-    is( $status->(undef), 'pass', 'a distribution that declares nothing passes' );
-    is( $status->("x_system_packages:\n  ffmpeg:\n    deb: ffmpeg\n    test: ffmpeg -version\n"), 'pass', 'and so does one that declares a dependency and its test' );
-    is( $status->("x_system_packages:\n  Ssl:\n    deb: { name: libssl3, ubuntu/24.04: libssl3t64, debian/13: ~ }\n"), 'pass', 'and one that names a package for a release, or none' );
+    is( $status->(undef),                                                                                                                                                                                                                                                                                            'pass', 'a distribution that declares nothing passes' );
+    is( $status->("x_system_packages:\n  ffmpeg:\n    deb: ffmpeg\n    test: ffmpeg -version\n"),                                                                                                                                                                                                                    'pass', 'and so does one that declares a dependency and its test' );
+    is( $status->("x_system_packages:\n  Ssl:\n    deb: { name: libssl3, ubuntu/24.04: libssl3t64, debian/13: ~ }\n"),                                                                                                                                                                                               'pass', 'and one that names a package for a release, or none' );
     is( $status->("x_system_packages:\n  ffmpeg:\n    deb: { name: ffmpeg, source: jellyfin }\nx_system_sources:\n  deb:\n    - { name: jellyfin, uri: 'https://repo.test.test', suites: [stable], components: [main], key: 'https://repo.test.test/k', fingerprint: 0123456789ABCDEF0123456789ABCDEF01234567 }\n"), 'pass', 'and one whose package comes from an archive' );
-    is( $status->("x_system_packages:\n  ffmpeg:\n    deb: { name: ffmpeg, source: jellyfin }\nx_system_sources:\n  deb:\n    - { name: jellyfin, uri: 'https://repo.test.test', suites: [stable], components: [main], key: 'https://repo.test.test/k' }\n"), 'fail', 'a source without the fingerprint of its key fails' );
-    is( $status->("x_system_packages:\n  ffmpeg:\n    deb: { name: ffmpeg, source: jellyfin }\n"), 'fail', 'and so does a source that is not declared' );
-    is( $status->("x_system_packages:\n  ffmpeg: { deb: ffmpeg- }\n"), 'fail', 'a deb name that apt reads as a removal fails' );
-    is( $status->("x_system_packages:\n  ffmpeg: { Deb: ffmpeg }\n"), 'fail', 'and so does a key that is not the name of a packager' );
+    is( $status->("x_system_packages:\n  ffmpeg:\n    deb: { name: ffmpeg, source: jellyfin }\nx_system_sources:\n  deb:\n    - { name: jellyfin, uri: 'https://repo.test.test', suites: [stable], components: [main], key: 'https://repo.test.test/k' }\n"),                                                        'fail', 'a source without the fingerprint of its key fails' );
+    is( $status->("x_system_packages:\n  ffmpeg:\n    deb: { name: ffmpeg, source: jellyfin }\n"),                                                                                                                                                                                                                   'fail', 'and so does a source that is not declared' );
+    is( $status->("x_system_packages:\n  ffmpeg: { deb: ffmpeg- }\n"),                                                                                                                                                                                                                                               'fail', 'a deb name that apt reads as a removal fails' );
+    is( $status->("x_system_packages:\n  ffmpeg: { Deb: ffmpeg }\n"),                                                                                                                                                                                                                                                'fail', 'and so does a key that is not the name of a packager' );
 };
 
 subtest 'a placeholder that nothing fills stops its file, and says which' => sub {
@@ -277,7 +280,7 @@ subtest 'a placeholder that nothing fills stops its file, and says which' => sub
     ok( !-e "$repo/Changes", 'Changes is not written with {{DATE}} in it' );
     ok( -e "$repo/dist.ini", 'while the files that do not need it are' );
     my @manual = map { @{ $_->{manual} } } @$plan;
-    is( scalar( grep {/DATE/} @manual ), 1, 'and the update names the variable' ) or diag( explain \@manual );
+    is( scalar( grep { /DATE/ } @manual ), 1, 'and the update names the variable' ) or diag( explain \@manual );
 };
 
 done_testing();
