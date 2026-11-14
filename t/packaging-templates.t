@@ -525,19 +525,30 @@ subtest 'the preferred modules ban the builtin flock' => sub {
     is( scalar @mutex, 0, 'and code that locks with Mutex::Flock is not' ) or diag join q{}, @mutex;
 };
 
-# Both options are off by default, and a policy section without them reports
-# only a sub that the policy can read.
-subtest 'both profiles turn on the call reports of the Stricter policy' => sub {
-    my $policy  = 'ControlStructures::ProhibitMutatingListFunctionsStricter';
-    my $heading = qr/^\[\Q$policy\E\]\n/m;
-    foreach my $profile ( [ perlcriticrc => $modern ], [ 'perlcriticrc.compat' => $compat ] ) {
-        my ( $name, $text ) = @$profile;
-        my ($section) = $text =~ m/$heading((?:[^\[\n]\N*\n)*)/;
-        ok( defined $section, "$name enables ProhibitMutatingListFunctionsStricter" ) or next;
-        like( $section, qr/^report_unresolved_calls\s*=\s*1$/m,  "and reports a call that it cannot read in a list function block" );
-        like( $section, qr/^report_postfix_for_calls\s*=\s*1$/m, "and a call before a postfix for" );
+# ProhibitCallsWithAliasedTopic reports a call while $_ is the caller's element,
+# and the Stricter policy only a sub that it can read, so each call is reported
+# once.  Asked of the whole profile, rather than of its text, because
+# -single-policy turns on a policy that the profile does not name.
+subtest 'each profile reports a call with an aliased $_ once' => sub {
+    require Perl::Critic;
+    my $code = "package Probe;\nsub clobber { \$_ = 1; return }\nmy \@names = map { \$_->name } \@ARGV;\nwarn_about(\$_) for \@ARGV;\nmy \@gone = map { clobber() } \@ARGV;\n1;\n";
+    foreach my $profile (qw{perlcriticrc perlcriticrc.compat}) {
+        my @found = Perl::Critic->new( -profile => "$TEMPLATES/$profile" )->critique( \$code );
+        my %lines;
+        foreach my $violation (@found) {
+            my ($policy) = $violation->policy =~ m/::(\w+)\z/;
+            push @{ $lines{$policy} }, $violation->line_number;
+        }
+        is( join( q{ }, sort { $a <=> $b } @{ $lines{ProhibitCallsWithAliasedTopic}         // [] } ), '3 4', "$profile: a method in a map and a sub before a postfix for are reported as calls with an aliased \$_" );
+        is( join( q{ }, sort { $a <=> $b } @{ $lines{ProhibitMutatingListFunctionsStricter} // [] } ), '5',   "$profile: and the Stricter policy reports only the sub of the file that changes \$_" );
     }
-    like( $dist, qr/authordep\s+Perl::Critic::Policy::\Q$policy\E\s+=\s+0[.]003$/m, 'dist.ini asks for the version that judges a call only where $_ is the caller\'s' );
+    my %versions = (
+        'ControlStructures::ProhibitMutatingListFunctionsStricter' => '0.003',
+        'Variables::ProhibitCallsWithAliasedTopic'                 => '0.001',
+    );
+    foreach my $policy ( sort keys %versions ) {
+        like( $dist, qr/authordep\s+Perl::Critic::Policy::\Q$policy\E\s+=\s+\Q$versions{$policy}\E$/m, "dist.ini asks for $policy $versions{$policy}" );
+    }
 };
 
 subtest 'the version dzil stamps is not code above use strict' => sub {

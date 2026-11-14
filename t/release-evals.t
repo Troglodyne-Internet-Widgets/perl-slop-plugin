@@ -69,8 +69,8 @@ C<Readonly>, which is what F<.preferred_modules.ini> is for.
 bans.
 
 =item * perlcritic, with its profile, reports a method call in a C<map> block
-and a sub call before a postfix C<for>, the two options of
-C<ProhibitMutatingListFunctionsStricter> that the profile turns on.
+and a sub call before a postfix C<for>, which
+C<ProhibitCallsWithAliasedTopic> reports.
 
 =item * perlcritic, with its profile, reports a nested read such as
 C<$h{a}{b}> where C<no autovivification> is not in scope, and not in a block
@@ -236,9 +236,9 @@ sub check_distribution {
     my ($carp) = $sandboxed->( $dist, {}, qw{perlcritic --profile .perlcriticrc --single-policy PreferredModules --verbose %m\n zz-carp.pl} );
     like( $carp, qr/\bCarp\b/, "$label: and it reports use Carp" );
 
-    # Methods and a postfix for: what the two options of the policy add.
+    # A method in a map, and a sub before a postfix for.
     spew( "$dist/zz-topic.pl", "use strict;\nuse warnings;\nmy \@names = map { \$_->name } \@ARGV;\nwarn_about(\$_) for \@ARGV;\n" );
-    my ($topic) = $sandboxed->( $dist, {}, qw{perlcritic --profile .perlcriticrc --nocolor --single-policy ProhibitMutatingListFunctionsStricter --verbose %l\n zz-topic.pl} );
+    my ($topic) = $sandboxed->( $dist, {}, qw{perlcritic --profile .perlcriticrc --nocolor --single-policy ProhibitCallsWithAliasedTopic --verbose %l\n zz-topic.pl} );
     is( join( q{ }, sort { $a <=> $b } $topic =~ m/^(\d+)$/mg ), '3 4', "$label: and it reports calls while \$_ is the caller's element, in map and before a postfix for" );
 
     # A nested read with no pragma, then the same read in a block that has it.
