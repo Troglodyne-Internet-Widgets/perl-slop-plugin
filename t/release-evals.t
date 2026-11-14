@@ -1,8 +1,10 @@
 #!/usr/bin/env perl
 use 5.014;
 use strict;
-use warnings;
-use re '/aa';
+use warnings FATAL => 'all';
+use re '/aasx';
+
+=for stopwords eval evals namespaces AppArmor postfix perl
 
 =head1 NAME
 
@@ -24,7 +26,7 @@ case belongs to the skill whose name it starts with, as
 F<evals/packaging-perl-compat> belongs to F<skills/packaging-perl>.
 
 It needs C<claude> on the C<PATH>, logged in, and C<bubblewrap> and C<socat>
-for the sandbox that a run's shell commands use.  It checks that bwrap can
+for the sandbox that a run's shell commands use.  It checks that C<bwrap> can
 make its namespaces before any run starts, because a run without them still
 completes and scores what the Write tool alone could do.  Where it cannot, the
 user runs F<scripts/setup-eval-sandbox>, which changes the AppArmor policy of
@@ -61,14 +63,14 @@ is not part of Perl::Critic, so a fresh clone can install what its profile
 needs.
 
 =item * perlcritic, with its profile, reports C<use constant> and names
-Readonly, which is what F<.preferred_modules.ini> is for.
+C<Readonly>, which is what F<.preferred_modules.ini> is for.
 
 =item * perlcritic, with its profile, reports C<use Carp>, which F<.preferred_modules.ini>
 bans.
 
 =item * perlcritic, with its profile, reports a method call in a C<map> block
 and a sub call before a postfix C<for>, the two options of
-ProhibitMutatingListFunctionsStricter that the profile turns on.
+C<ProhibitMutatingListFunctionsStricter> that the profile turns on.
 
 =item * perlcritic, with its profile, reports a nested read such as
 C<$h{a}{b}> where C<no autovivification> is not in scope, and not in a block
@@ -87,7 +89,7 @@ then matched with.  It does not report a C<qr//>.
 C<--keep-temp> keeps each run's directory, and the distribution is under
 F<sealed/home/cwd> in it.  The distribution is model-written code, and its
 F<dist.ini> and F<.git> are configuration that dzil and git load.  So the checks
-run on a copy, in bwrap, with no network and nothing writable but the copy.
+run on a copy, in C<bwrap>, with no network and nothing writable but the copy.
 The directory of a run that passed is removed after its checks.  The
 directory of a run that failed a grader, ended in an error, or failed a check
 is kept whole, with its trace in F<out/trace.jsonl>, and the test names it.
@@ -108,7 +110,7 @@ run may write is under a path that it may not.
 =head2 The plugins that a case loads beside this one
 
 A case can load only the plugins inside this repository, as C<plugins> in its
-F<case.yaml>.  The scaffold of packaging-perl enables simple-english, and gates
+F<case.yaml>.  The scaffold of packaging-perl enables C<simple-english>, and gates
 prose on one of its skills.  So before the runs, this copies each plugin of
 C<%EVAL_PLUGIN> from where Claude Code installed it into F<.eval-plugins>,
 which git ignores.  It fails when one is not installed, because a run without
@@ -124,11 +126,12 @@ Core-only, as F<t/packaging-templates.t> is.
 
 use Test::More;
 use ExtUtils::Installed ();
-use File::Basename qw{basename dirname};
-use File::Path qw{remove_tree};
-use File::Temp qw{tempdir};
+use File::Basename      qw{basename dirname};
+use File::Copy          ();
+use File::Path          qw{remove_tree};
+use File::Temp          qw{tempdir};
 use FindBin;
-use JSON::PP ();
+use JSON::PP ();    ## no critic (PreferredModules) -- core-only, as the POD says
 
 # What each case asks for: the name of the distribution, the perl it targets,
 # and so the template profile that it should have copied.
@@ -137,6 +140,25 @@ my %CASE = (
     'packaging-perl-compat' => { name => 'Text-Rot13', perl => '5.014', profile => 'perlcriticrc.compat' },
 );
 my $TEMPLATES = "$FindBin::Bin/../skills/packaging-perl/templates";
+
+# The whole of the file at $path.  Dies if it cannot be read.
+sub slurp {
+    my ($path) = @_;
+    open( my $fh, '<', $path ) or die "$path: $!\n";
+    local $/ = undef;
+    my $text = <$fh>;
+    close($fh) or die "$path: $!\n";
+    return $text;
+}
+
+# Writes $text to the file at $path.  Dies if it cannot.
+sub spew {
+    my ( $path, $text ) = @_;
+    open( my $fh, '>', $path ) or die "$path: $!\n";
+    print {$fh} $text;
+    close($fh) or die "$path: $!\n";
+    return;
+}
 
 # A command in bwrap: the root read-only, a fresh /tmp, no network, and only
 # $dir writable.  Returns what it printed, both streams, and its exit status.
@@ -147,16 +169,16 @@ my $sandboxed = sub {
         '--bind', $dir, $dir, '--chdir', $dir,
         map { ( '--setenv', $_, $env->{$_} ) } sort keys %$env,
     );
-    open( my $fh, '-|', @bwrap, '--', 'sh', '-c', 'exec "$@" 2>&1', 'sh', @cmd ) or die "bwrap: $!";
+    open( my $fh, '-|', @bwrap, qw{-- sh -c}, 'exec "$@" 2>&1', 'sh', @cmd ) or die "bwrap: $!";    ## no critic (ProhibitPipeOpen) -- core-only, and what the command printed is the point
     local $/ = undef;
     my $text = <$fh> // q{};
-    close($fh);
+    close($fh);                                                                                     ## no critic (InputOutput::RequireCheckedSyscalls) -- false for any nonzero exit, which this returns
     return ( $text, $? >> 8 );
 };
 
 # The policies that perlcritic enables with the profile in $dir.
 my $enabled_in = sub {
-    my ($dir) = @_;
+    my ($dir)    = @_;
     my ($listed) = $sandboxed->( $dir, {}, qw{perlcritic --profile .perlcriticrc --list-enabled} );
     return { map { m/\A\d+\s+(\S+)/ ? ( $1 => 1 ) : () } split /\n/, $listed };
 };
@@ -170,11 +192,11 @@ my %CORE_POLICY = map { m{/Perl/Critic/Policy/(.+)[.]pm\z} ? ( ( $1 =~ s{/}{::}g
 sub check_distribution {
     my ( $label, $case, $workspace ) = @_;
 
-    my @found = grep { -f "$_/dist.ini" } glob("$workspace/*");
+    my @found = grep { -e "$_/dist.ini" } glob("$workspace/*");
     is( scalar @found, 1, "$label: the run left one distribution" ) or return;
 
     my $copy = tempdir( CLEANUP => 1 );
-    system( 'cp', '-a', $found[0], $copy ) == 0 or return fail("$label: copy $found[0]");
+    system( 'cp', '-a', $found[0], $copy ) == 0 or return fail("$label: copy $found[0]");    ## no critic (logicLAB::ProhibitShellDispatch) -- a tree with its modes and links, which core cannot copy
     my $dist = "$copy/" . basename( $found[0] );
 
     my ( $test, $tested ) = $sandboxed->( $dist, { RELEASE_TESTING => 1, AUTHOR_TESTING => 1 }, qw{dzil test} );
@@ -183,54 +205,45 @@ sub check_distribution {
     my $wants = $CASE{$case} // {};
     my $built = "$dist/zz-build";
     my ( $build, $building ) = $sandboxed->( $dist, {}, qw{dzil build --in}, $built );
-    my $meta = $building == 0 && eval {
-        open( my $fh, '<', "$built/META.json" ) or die "$built/META.json: $!";
-        local $/ = undef;
-        JSON::PP->new->decode(<$fh>);
-    };
+    my $meta = $building == 0 && eval { JSON::PP->new->decode( slurp("$built/META.json") ) };
     ok( $meta, "$label: dzil build writes META.json" ) or diag( substr( $build, -2000 ) );
-    is( $meta && $meta->{name}, $wants->{name}, "$label: which names the distribution" );
-    is( $meta && $meta->{prereqs}{runtime}{requires}{perl}, $wants->{perl}, "$label: and requires the perl the case asks for" );
+    is( $meta && $meta->{name},                             $wants->{name}, "$label: which names the distribution" );
+    is( $meta && $meta->{prereqs}{runtime}{requires}{perl}, $wants->{perl}, "$label: and requires the perl the case asks for" );    ## no critic (Variables::RequireNoAutovivification) -- core-only, and nothing reads the decoded copy again
     remove_tree($built);
 
     # The template's profile is read as the distribution's is, beside the files
     # that it names, under the names that the scaffold gives them.
     my $template = tempdir( CLEANUP => 1 );
-    system( 'cp', "$TEMPLATES/" . ( $wants->{profile} // 'perlcriticrc' ), "$template/.perlcriticrc" ) == 0 or return fail("$label: copy the template profile");
-    system( 'cp', "$TEMPLATES/$_", "$template/.$_" ) foreach qw{preferred_modules.ini pod_stopwords};
-    my %enabled = %{ $enabled_in->($dist) };
+    File::Copy::copy( "$TEMPLATES/" . ( $wants->{profile} // 'perlcriticrc' ), "$template/.perlcriticrc" ) or return fail("$label: copy the template profile: $!");
+    foreach my $file (qw{preferred_modules.ini pod_stopwords}) {
+        File::Copy::copy( "$TEMPLATES/$file", "$template/.$file" ) or return fail("$label: copy $file: $!");
+    }
+    my %enabled  = %{ $enabled_in->($dist) };
     my %expected = %{ $enabled_in->($template) };
     ok( scalar keys %enabled, "$label: perlcritic reads the profile" );
     is_deeply( [ sort keys %enabled ], [ sort keys %expected ], "$label: and enables what the $wants->{profile} template enables" );
 
-    my ($deps) = $sandboxed->( $dist, {}, qw{dzil authordeps} );
-    my %authordep = map { ( $_ => 1 ) } split /\n/, $deps;
-    my @missing = grep { !$CORE_POLICY{$_} && !$authordep{"Perl::Critic::Policy::$_"} } sort keys %enabled;
+    my ($deps)    = $sandboxed->( $dist, {}, qw{dzil authordeps} );
+    my %authordep = map  { ( $_ => 1 ) } split /\n/, $deps;
+    my @missing   = grep { !$CORE_POLICY{$_} && !$authordep{"Perl::Critic::Policy::$_"} } sort keys %enabled;
     is_deeply( \@missing, [], "$label: dzil authordeps names every policy the profile enables that Perl::Critic lacks" );
 
-    open( my $fh, '>', "$dist/zz-constant.pl" ) or die "$dist: $!";
-    print {$fh} "use strict;\nuse warnings;\nuse constant LIMIT => 1;\nprint LIMIT;\n";
-    close($fh) or die "$dist: $!";
+    spew( "$dist/zz-constant.pl", "use strict;\nuse warnings;\nuse constant LIMIT => 1;\nprint LIMIT;\n" );
     my ($preferred) = $sandboxed->( $dist, {}, qw{perlcritic --profile .perlcriticrc --single-policy PreferredModules --verbose %m\n zz-constant.pl} );
     like( $preferred, qr/Readonly/, "$label: and its profile steers use constant to Readonly" );
 
-    open( $fh, '>', "$dist/zz-carp.pl" ) or die "$dist: $!";
-    print {$fh} "use strict;\nuse warnings;\nuse Carp ();\nCarp::croak(qq{no\\n});\n";
-    close($fh) or die "$dist: $!";
+    spew( "$dist/zz-carp.pl", "use strict;\nuse warnings;\nuse Carp ();\nCarp::croak(qq{no\\n});\n" );
     my ($carp) = $sandboxed->( $dist, {}, qw{perlcritic --profile .perlcriticrc --single-policy PreferredModules --verbose %m\n zz-carp.pl} );
     like( $carp, qr/\bCarp\b/, "$label: and it reports use Carp" );
 
     # Methods and a postfix for: what the two options of the policy add.
-    open( $fh, '>', "$dist/zz-topic.pl" ) or die "$dist: $!";
-    print {$fh} "use strict;\nuse warnings;\nmy \@names = map { \$_->name } \@ARGV;\nwarn_about(\$_) for \@ARGV;\n";
-    close($fh) or die "$dist: $!";
+    spew( "$dist/zz-topic.pl", "use strict;\nuse warnings;\nmy \@names = map { \$_->name } \@ARGV;\nwarn_about(\$_) for \@ARGV;\n" );
     my ($topic) = $sandboxed->( $dist, {}, qw{perlcritic --profile .perlcriticrc --nocolor --single-policy ProhibitMutatingListFunctionsStricter --verbose %l\n zz-topic.pl} );
     is( join( q{ }, sort { $a <=> $b } $topic =~ m/^(\d+)$/mg ), '3 4', "$label: and it reports calls while \$_ is the caller's element, in map and before a postfix for" );
 
     # A nested read with no pragma, then the same read in a block that has it.
-    open( $fh, '>', "$dist/zz-autoviv.pl" ) or die "$dist: $!";
-    print {$fh} "use strict;\nuse warnings;\nmy \%h;\nmy \$x = \$h{a}{b};\n{\n    no autovivification;\n    my \$y = \$h{c}{d};\n}\n";
-    close($fh) or die "$dist: $!";
+    spew( "$dist/zz-autoviv.pl", "use strict;\nuse warnings;\nmy \%h;\nmy \$x = \$h{a}{b};\n{\n    no autovivification;\n    my \$y = \$h{c}{d};\n}\n" );
+
     # The whole profile, because --single-policy runs a policy that the profile
     # does not enable.
     my ($autoviv) = $sandboxed->( $dist, {}, qw{perlcritic --profile .perlcriticrc --nocolor --verbose %l:%p\n zz-autoviv.pl} );
@@ -238,17 +251,13 @@ sub check_distribution {
 
     # A countdown from an expression and one between literals, then a range
     # that counts up and a flip-flop, which is not a list at all.
-    open( $fh, '>', "$dist/zz-range.pl" ) or die "$dist: $!";
-    print {$fh} "use strict;\nuse warnings;\nmy \$n = \@ARGV;\nmy \@down = ( \$n .. 1 );\nmy \@none = ( 10 .. 1 );\nmy \@up = ( 1 .. \$n );\nprint if 3 .. 5;\n";
-    close($fh) or die "$dist: $!";
+    spew( "$dist/zz-range.pl", "use strict;\nuse warnings;\nmy \$n = \@ARGV;\nmy \@down = ( \$n .. 1 );\nmy \@none = ( 10 .. 1 );\nmy \@up = ( 1 .. \$n );\nprint if 3 .. 5;\n" );
     my ($range) = $sandboxed->( $dist, {}, qw{perlcritic --profile .perlcriticrc --nocolor --verbose %l:%p\n zz-range.pl} );
     is( join( q{ }, $range =~ m/^(\d+):ValuesAndExpressions::ProhibitDescendingRanges$/mg ), '4 5', "$label: and it reports a range that counts down, and not one that counts up or a flip-flop" );
 
     # A pattern key with a string, a string in a scalar that is matched with,
     # and then the same two written as qr//.
-    open( $fh, '>', "$dist/zz-regex-string.pl" ) or die "$dist: $!";
-    print {$fh} "use strict;\nuse warnings;\nmy \%s = ( pattern => '^a+\$' );\nmy \$re = 'b+';\nprint 1 if \$ARGV[0] =~ m/\$re/aa;\nmy \%t = ( pattern => qr/^a+\$/aa );\nmy \$qr = qr/b+/aa;\nprint 1 if \$ARGV[0] =~ \$qr;\n";
-    close($fh) or die "$dist: $!";
+    spew( "$dist/zz-regex-string.pl", "use strict;\nuse warnings;\nmy \%s = ( pattern => '^a+\$' );\nmy \$re = 'b+';\nprint 1 if \$ARGV[0] =~ m/\$re/aa;\nmy \%t = ( pattern => qr/^a+\$/aa );\nmy \$qr = qr/b+/aa;\nprint 1 if \$ARGV[0] =~ \$qr;\n" );
     my ($strings) = $sandboxed->( $dist, {}, qw{perlcritic --profile .perlcriticrc --nocolor --verbose %l:%p\n zz-regex-string.pl} );
     is( join( q{ }, $strings =~ m/^(\d+):RegularExpressions::ProhibitRegexInStrings$/mg ), '3 4', "$label: and it reports a regular expression written as a string, and not one written as qr//" );
 
@@ -278,48 +287,48 @@ my @TOOLS     = qw{Write Edit Bash};
 my %EVAL_PLUGIN = ( 'simple-english' => 'simple-english@simple-english' );
 
 # How many tests have failed so far.
-sub failures { return scalar grep { !$_ } Test::More->builder->summary }
+sub failures {
+    return scalar grep { !$_ } Test::More->builder->summary;
+}
 
-my $have_claude = grep { -x "$_/claude" } split /:/, $ENV{PATH} // q{};
+my $have_claude = grep { -x "$_/claude" } split /:/, $ENV{PATH} // q{};    ## no critic (ValuesAndExpressions::ProhibitFiletest_rwxRWX) -- the mode bit is how a shell finds a program on PATH
 plan skip_all => 'claude is not on the PATH' unless $have_claude;
 
 my $output = sub {
     my (@cmd) = @_;
-    open( my $fh, '-|', @cmd ) or die "@cmd: $!";
+    open( my $fh, '-|', @cmd ) or die "@cmd: $!";    ## no critic (ProhibitPipeOpen) -- core-only, and what the command printed is the point
     local $/ = undef;
     my $text = <$fh>;
-    close($fh);
+    close($fh);                                      ## no critic (InputOutput::RequireCheckedSyscalls) -- false for any nonzero exit, which this returns
     return ( $text // q{}, $? >> 8 );
 };
 
 my ($tag) = $output->( qw{git describe --tags --match}, 'perl-slop--v*', '--abbrev=0' );
 chomp $tag;
 
-opendir( my $dh, 'skills' ) or die "skills: $!";
-my @skills = sort { length $b <=> length $a } grep { !m/\A[.]/ && -d "skills/$_" } readdir $dh;
-closedir $dh;
+# Longest first, so that a case goes to the longest skill name that it starts with.
+my @skills = reverse sort { length $a <=> length $b } map { s{\Askills/}{}r } grep { -d } glob('skills/*');
 
 # Each case, by the skill that it belongs to.
 my %cases_of;
-opendir( my $eh, 'evals' ) or die "evals: $!";
-foreach my $case ( sort grep { -f "evals/$_/prompt.md" } readdir $eh ) {
+foreach my $case ( sort grep { -e "evals/$_/prompt.md" } map { s{\Aevals/}{}r } glob('evals/*') ) {
     my ($skill) = grep { index( $case, "$_-" ) == 0 } @skills;
     ok( defined $skill, "evals/$case is named after the skill it tests" ) or next;
     push @{ $cases_of{$skill} }, $case;
 }
-closedir $eh;
 
-my @changed = grep {
-    my $skill = $_;
-    !length $tag || ( $output->( qw{git diff --quiet}, $tag, '--', "skills/$skill", map { "evals/$_" } @{ $cases_of{$skill} } ) )[1] != 0
-} sort keys %cases_of;
+my @changed;
+foreach my $skill ( sort keys %cases_of ) {
+    my @paths = ( "skills/$skill", map { "evals/$_" } @{ $cases_of{$skill} } );
+    push @changed, $skill if $tag eq q{} || ( $output->( qw{git diff --quiet}, $tag, '--', @paths ) )[1] != 0;
+}
 
 if ( !@changed ) {
-    note( "No skill with evals changed since $tag" );
+    note("No skill with evals changed since $tag");
     done_testing();
     exit 0;
 }
-note( 'Changed since ' . ( length $tag ? $tag : 'the start' ) . ": @changed" );
+note( 'Changed since ' . ( $tag ne q{} ? $tag : 'the start' ) . ": @changed" );
 
 # The same namespaces that the sandbox of a run asks for.  Without them every
 # shell command of a run fails, and the case is graded on what Write could do.
@@ -332,9 +341,7 @@ ok( $sandbox, 'bwrap can make the namespaces that the sandbox of a run needs' ) 
 
 my $installed = eval {
     my $config = $ENV{CLAUDE_CONFIG_DIR} // "$ENV{HOME}/.claude";
-    open( my $fh, '<', "$config/plugins/installed_plugins.json" ) or die "$config/plugins/installed_plugins.json: $!\n";
-    local $/ = undef;
-    JSON::PP->new->decode(<$fh>)->{plugins};
+    JSON::PP->new->decode( slurp("$config/plugins/installed_plugins.json") )->{plugins};
 } // {};
 foreach my $dir ( sort keys %EVAL_PLUGIN ) {
     my ($install) = map { $_->{installPath} } @{ $installed->{ $EVAL_PLUGIN{$dir} } // [] };
@@ -353,16 +360,17 @@ ok( -d $RUN_TMP, "the runs are made under $RUN_TMP" );
 # The paths that the sandbox of a run lets it write, but also denies, which
 # leaves them read-only.
 sub denied_writes {
-    my ($root) = @_;
-    my $settings = eval {
-        open( my $fh, '<', "$root/config/settings.json" ) or die "$root/config/settings.json: $!\n";
-        local $/ = undef;
-        JSON::PP->new->decode(<$fh>);
-    } // return ['the settings of the run cannot be read'];
-    my $fs    = $settings->{sandbox}{filesystem} // {};
-    my @deny  = map { s{\A//}{/}r } @{ $fs->{denyWrite} // [] };
-    my @allow = map { s{\A//}{/}r } @{ $fs->{allowWrite} // [] };
-    return [ grep { my $allow = $_; grep { $allow eq $_ || index( $allow, "$_/" ) == 0 } @deny } @allow ];
+    my ($root)   = @_;
+    my $settings = eval { JSON::PP->new->decode( slurp("$root/config/settings.json") ) } // return ['the settings of the run cannot be read'];
+    my $fs       = $settings->{sandbox}{filesystem}                                      // {};                                                  ## no critic (Variables::RequireNoAutovivification) -- core-only, and nothing reads the decoded copy again
+    my @deny     = map { s{\A//}{/}r } @{ $fs->{denyWrite}  // [] };
+    my @allow    = map { s{\A//}{/}r } @{ $fs->{allowWrite} // [] };
+    return [
+        grep {
+            my $allow = $_;
+            grep { $allow eq $_ || index( $allow, "$_/" ) == 0 } @deny
+        } @allow
+    ];
 }
 
 foreach my $skill (@changed) {
@@ -371,32 +379,30 @@ foreach my $skill (@changed) {
     # Standard input closed: a claude child that can read a terminal can wait
     # on it.  Each argument is its own word, so no shell sees the glob.
     my $status = do {
-        open( my $saved, '<&', \*STDIN ) or die "dup STDIN: $!";
-        open( STDIN, '<', '/dev/null' ) or die "/dev/null: $!";
+        open( my $saved, '<&', \*STDIN )     or die "dup STDIN: $!";    ## no critic (InputOutput::RequireBriefOpen) -- held while the child runs, to give STDIN back after it
+        open( STDIN,     '<',  '/dev/null' ) or die "/dev/null: $!";
         local $ENV{TMPDIR} = $RUN_TMP;
-        system(
-            qw{claude plugin eval .}, '--case', "$skill-*",
-            '--runs', $RUNS, '--ablation', 'none', '--threshold', $THRESHOLD,
-            '--max-cost-usd', $COST_CAP, '--trust-plugin', '--no-publish', '--scaffold',
-            '--json', $json, '--keep-temp', '--allow-tools', @TOOLS,
+        system(                                                         ## no critic (logicLAB::ProhibitShellDispatch) -- the eval is a run of claude
+            qw{claude plugin eval .},      '--case',  "$skill-*",
+            '--runs',                      $RUNS,     qw{--ablation none --threshold},                   $THRESHOLD,
+            '--max-cost-usd',              $COST_CAP, qw{--trust-plugin --no-publish --scaffold --json}, $json,
+            qw{--keep-temp --allow-tools}, @TOOLS,
         );
         open( STDIN, '<&', $saved ) or die "restore STDIN: $!";
         $? >> 8;
     };
 
-    my $result = eval {
-        open( my $fh, '<', $json ) or die "$json: $!";
-        local $/ = undef;
-        JSON::PP->new->decode(<$fh>);
-    };
+    my $result = eval { JSON::PP->new->decode( slurp($json) ) };
     ok( $result, "$skill: the eval wrote its result" ) or do { diag $@; next };
 
     foreach my $case ( @{ $result->{cases} // [] } ) {
-        my $score = $case->{aggregates}{score} // 0;
+        my $score = $case->{aggregates}{score} // 0;    ## no critic (Variables::RequireNoAutovivification) -- core-only, and nothing reads the decoded copy again
         cmp_ok( $score, '>=', $THRESHOLD, "$skill: $case->{name} scores at least $THRESHOLD" ) or do {
             foreach my $run ( @{ $case->{arms}{with} // [] } ) {
-                diag( "run error: $run->{error}" ) if $run->{error};
-                diag( "failed: $_->{name}" ) foreach grep { !$_->{passed} } @{ $run->{graders} // [] };
+                diag("run error: $run->{error}") if $run->{error};
+                foreach my $grader ( grep { !$_->{passed} } @{ $run->{graders} // [] } ) {
+                    diag("failed: $grader->{name}");
+                }
             }
         };
     }
@@ -422,7 +428,7 @@ foreach my $skill (@changed) {
             is_deeply( denied_writes($root), [], "$label: its sandbox let its shell write where the run worked" );
             check_distribution( $label, $case->{name}, "$root/sealed/home/cwd" ) if $skill eq 'packaging-perl';
 
-            system( 'chmod', '-R', 'u+rwX', $root );
+            system( qw{chmod -R u+rwX}, $root );    ## no critic (logicLAB::ProhibitShellDispatch) -- core has no chmod of a tree
             if ( !$run->{passed} || $run->{error} || failures() > $failed_before ) {
                 diag("$label: failed, so its directory is kept at $root, with the trace at $run->{tracePath}");
                 next;
