@@ -89,7 +89,32 @@ answer:
 2. The modules that the distribution already depends on: the prereqs in
    `dist.ini`, `cpanfile` or `Makefile.PL`, and the POD of each module that the
    file already loads.
-3. CPAN.  Search MetaCPAN for the job, not for your name for it.
+3. Every module that is installed for the perl that runs the code, whether
+   the distribution depends on it or not.  The search is below.
+4. CPAN.  Search MetaCPAN for the job, not for your name for it.
+
+Step 3 is a search of files on the disk, and it takes less than a second.  So
+do it for each block of logic, before you decide to keep your own code.
+Search the POD headings of every installed module for two words of the job,
+in either order.  For a sub that decides whether an IPv4 address is public,
+the two words are "public" and "address":
+
+    D=$(perl -e 'print join " ", grep { -d } @INC')
+    grep -rn -i -E --include='*.pm' --include='*.pod' \
+        '^=(head[2-4]|item)\b.*public.*(ip|addr)|^=(head[2-4]|item)\b.*(ip|addr).*public' $D
+
+That search finds `=head2 is_public_ipv4($ip)` in Data::Validate::IP.  Run
+it with the perl that runs the code, because each perl has its own `@INC`.
+Search the POD, not the code.  Some modules make their subs at run time, so
+a search for `sub` does not find them.  Their POD headings still name each
+sub.
+
+If the module that you find is not a prereq yet, it is still the answer.
+Add it to the prereqs, and say in the commit message what it replaces.  A
+small module that does one job costs less than your copy of that job.  Your
+copy has the bugs that the module fixed years ago.  Sometimes the code runs
+where the module cannot be installed.  Then say so in a comment beside your
+code, and name the module.
 
 Read the return value of each call that the new code makes.  Some code works
 out what a call is about to do, or reads back what it just did.  That code
@@ -97,11 +122,12 @@ usually repeats a value that the call returns.  A loop walked up from a path to 
 the highest directory that `make_path` was about to create.  `make_path`
 returns the directories that it creates, highest first.
 
-A construct that people seldom write is a signal.  Three examples are a
-`for (;;)` with no counter, a walk of a directory by hand, and a parse with a
-regex.  A library often does that job already.  Stop and run the three
-searches before you keep it.  If the answer was "nothing", say which of the
-three you searched, as the paragraph above says.
+A construct that people seldom write is a signal.  Some examples are a
+`for (;;)` with no counter, a walk of a directory by hand, a parse with a
+regex, and a comparison of the octets of an address with numbers.  A library
+often does that job already.  Stop and do the four searches before you keep
+it.  If the answer was "nothing", say which of the four you did, as the
+paragraph above says.
 
 ## Encapsulate
 
