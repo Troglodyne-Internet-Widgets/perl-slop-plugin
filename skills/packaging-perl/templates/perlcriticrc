@@ -110,10 +110,11 @@ exclude_functions = print
 [RequireFatalWarnings]
 [ProhibitUnusedImports]
 # Modules imported for a side effect rather than for a symbol, which the policy
-# cannot see.  `re` is here because every file says `use re '/aa'`.  Add your
-# own: IO::Prompter installs prompt() from a custom import rather than @EXPORT,
-# and anything loaded by name from a string is invisible the same way.
-allow = re
+# cannot see.  Its built-in list has the pragmas, re, Test::NoWarnings,
+# Test2::Plugin::NoWarnings and Mojo::Base.  Add your own with an override of
+# allow in .conformance.yml: IO::Prompter installs prompt() from a custom import
+# rather than @EXPORT, and anything loaded by name from a string is invisible the
+# same way.
 # Off in a distribution that is only a library: it counts calls from bin/ and
 # lib/, and every sub a library exists to offer is called from neither -- a
 # module with one public sub and no bin/ reports that sub, which is the policy
