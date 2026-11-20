@@ -137,19 +137,47 @@ installs them into `.git/hooks`. If no variable fills a placeholder of a
 template, `update` does not write that file, and it says which variable to add.
 `check` must report a pass for each check.
 
-`update` never overwrites a file that exists. So you can run it again in a
-clone, which then gets the hooks that git does not install for it. You can also
-run it in an older distribution, which then gets the files that it lacks.
-So the procedure is the same for a new distribution and an old one. Run
-`update`, then `check`, and do what each one says until `check` passes.
+`update` never overwrites a file that exists, except `.perlcriticrc`, as the
+next paragraph says. So you can run it again in a clone, which then gets the
+hooks that git does not install for it. You can also run it in an older
+distribution, which then gets the files that it lacks. So the procedure is the
+same for a new distribution and an old one. Run `update`, then `check`, and do
+what each one says until `check` passes. `check` reports `info` for a hook that
+differs from its template. Merge such a hook by hand.
 
-`check` fails a profile that lacks a policy that its template enables, and
-names each such policy. `update` does not overwrite that profile. It names the
-policies to add by hand, so add a section for each one, and an authordep line
-for it in `dist.ini`. A profile can turn a policy off on purpose with a
-`[-Name]` section, and `check` accepts that. Do not delete a section of the
-profile, because `check` then reports its policy as missing. `check` reports
-`info` for a hook that differs from its template. Merge such a hook by hand.
+Do not edit `.perlcriticrc`. `update` writes it from the template of the
+flavor, with the overrides of the distribution applied, and replaces anything
+else. Declare each departure from the template in `.conformance.yml`, with a
+comment that says why:
+
+```yaml
+checks:
+  CriticProfile:
+    overrides:
+      # The programs run from the checkout until the first release.
+      logicLAB::RequireSheBang:
+        formats: '#!/usr/bin/env perl'
+      Subroutines::ProhibitExcessComplexity:
+        max_mccabe: 30
+      ValuesAndExpressions::ProhibitMagicNumbers: off
+      Some::Policy::OfItsOwn: {}
+    settings:
+      severity: 3
+```
+
+A mapping sets parameters over those of the template, and `~` removes one.
+`off` turns a policy off. An empty mapping enables a policy with the
+parameters of the template, so it adds a policy that the template lacks, or
+turns on one that the template turns off. `settings` does the same for the
+global keys, such as `severity`. Each policy of your own also needs an
+authordep line in `dist.ini`. `check` fails a profile that differs from the
+template with the overrides in any policy, parameter or setting, and names
+each difference.
+
+In a distribution whose `.perlcriticrc` already has changes of its own, run
+`conformance adopt` before the first such `update`. It prints the overrides
+that keep what the profile has now. Merge them into `.conformance.yml`, and
+delete each one that is drift rather than a choice.
 
 `update` also writes two files that Claude Code reads, and `check` fails a
 distribution without them. `.claude/settings.json` enables this plugin and
@@ -213,18 +241,34 @@ rest. It does not write the abstract in `NAME`. You write that, as an
 question above picked, and it names a good number of policies that are not in
 core Perl::Critic. That is what the second block of authordeps is for. Each
 profile's own header says what it assumes about the perl and which policies that
-assumption pays for, so read the top of the one the flavor wrote before editing it.
-
-Comment a profile with `#`. Perl::Critic reads `;` as a comment too, so a line
-that starts with `;` works, but it is a habit from `dist.ini`. There the `;`
-matters, because `dzil authordeps` reads only the lines that start with
-`; authordep`.
+assumption pays for. Read the top of the one the flavor wrote before you
+declare an override.
 
 One policy ships commented out in both profiles. `ProhibitUnusedDefinitions`
 counts calls from `bin/` and `lib/`, so in a distribution that is only a library
 it reports every sub the library exists to offer -- the policy working correctly
 and telling you nothing. Turn it on in a distribution that ships programs too,
-and put its authordep line back when you do.
+with an override such as `ProhibitUnusedDefinitions: {}`, and put its authordep
+line back when you do.
+
+**The shebang line** of every Perl program is `#!perl`: the programs in
+`bin/` and `script/`, the tests in `t/`, and `.tests-covering-map.pl`. When
+ExtUtils::MakeMaker installs a program, it replaces a first line that names
+`perl` with the path of the perl that installs it. Module::Build does the
+same. That perl has the modules that the program needs, so the program runs
+whatever is on the `PATH` of the person or service that starts it. The install
+leaves `#!/usr/bin/env perl` alone, because its interpreter is `env`. Then the
+program runs the first perl on that `PATH`. A service, a cron job or a task
+that root runs at boot usually finds only the system perl there, which lacks
+the modules.
+
+`#!perl` names no interpreter until the install rewrites it. So a program with
+it does not start from a checkout: run it as `perl -Ilib bin/foo`, or install
+it. A distribution whose programs run from its checkout, such as one that is
+not released yet, overrides the `formats` of `logicLAB::RequireSheBang` with
+`#!/usr/bin/env perl`, as the example above does. Delete the override when the
+programs run installed. `logicLAB::RequireSheBang` reports each file whose
+first line differs, when the hook judges it.
 
 `.preferred_modules.ini` is read by the `PreferredModules` policy and is where
 "use this rather than that" lives.
@@ -470,7 +514,8 @@ sub rot13 ($string) { ( my $rotated = $string ) =~ tr/A-Za-z/N-ZA-Mn-za-m/; retu
 module, and then wants its POD `NAME` to match the package -- which in a `.t` is
 `main`. The message is "Pod NAME on line 7 does not match the package
 declaration", and it points nowhere near the cause. Start every test with
-`#!/usr/bin/env perl` and it reads it as the program it is.
+the shebang line of the profile, `#!perl` unless an override says otherwise,
+and it reads it as the program it is.
 
 Only the hook will tell you. `all_critic_ok()`, which is what `[@TestingMania]`
 generates, reads `lib/` (or `blib/`) and never `t/`, so a release judges your

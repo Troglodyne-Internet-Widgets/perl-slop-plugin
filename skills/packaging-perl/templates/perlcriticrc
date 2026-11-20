@@ -74,7 +74,7 @@ info_level = 30
 [PreferredModules]
 config = .preferred_modules.ini
 [logicLAB::RequireSheBang]
-formats = #!/usr/bin/env perl
+formats = #!perl
 # Performance
 [logicLAB::ProhibitShellDispatch]
 [ProhibitPipeOpen]
@@ -110,10 +110,10 @@ exclude_functions = print
 [RequireFatalWarnings]
 [ProhibitUnusedImports]
 # Modules imported for a side effect rather than for a symbol, which the policy
-# cannot see.  `re` is here because every file says `use re '/aa'`.  Add your
-# own: IO::Prompter installs prompt() from a custom import rather than @EXPORT,
-# and anything loaded by name from a string is invisible the same way.
-allow = re
+# cannot see.  Its built-in list has the pragmas, re, Test::NoWarnings,
+# Test2::Plugin::NoWarnings and Mojo::Base.  Add your own with an override of
+# allow in .conformance.yml, such as a module that another one loads by the name
+# you give it in a string: Text::Xslate takes its bridge as module => [...].
 # Off in a distribution that is only a library: it counts calls from bin/ and
 # lib/, and every sub a library exists to offer is called from neither -- a
 # module with one public sub and no bin/ reports that sub, which is the policy
@@ -269,8 +269,9 @@ exclude_functions = print
 # A method takes the arguments of its interface, whether it reads them or not.
 allow_unused_subroutine_arguments = 1
 # Anything that returns a guard, which does its work by being held to the end of
-# its scope: a mock, a mocked file, a change of directory, a lock.
-# allow_if_computed_by = Test::MockModule->new Test::MockFile->file
+# its scope: a mock, a mocked file, or a change of directory that File::pushd
+# undoes when the object goes.
+allow_if_computed_by = Test::MockModule->new Test::MockFile->file Test::MockFile->file_from_disk Test::MockFile->symlink Test::MockFile->dir Test::MockFile->new_dir pushd tempd
 [Variables::ProtectPrivateVars]
 [Variables::RequireLexicalLoopIterators]
 # A block foreach with no loop variable, whose $_ the body can clobber.
