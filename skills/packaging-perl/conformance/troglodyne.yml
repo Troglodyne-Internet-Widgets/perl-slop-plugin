@@ -74,6 +74,10 @@ checks:
                 items:
                   type: string
         before_commit: *gate
+        # The program that hooks/skill-gates.pl runs on the prose of a post or a
+        # commit, relative to the root of the repository.
+        prose_check:
+          type: string
   # user overrides the account in the URL of the origin remote, so the
   # metadata names the old place once the repository moves.  The template no
   # longer sets it, so this finds the distributions that still do, and update

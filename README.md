@@ -48,6 +48,9 @@ apply to every project, Perl or not.
   that write, and `gh api` with a field or a write method.  It also covers MCP
   tools whose names say that they create, add, update, post, submit, reply to
   or merge one of those.
+- Before a post or a commit, the prose check of the repository, when it
+  has one.  The hook runs it after `perl-slop:information-security` is
+  loaded.  A section below says how a repository names its check.
 - Before every `gh pr create`, `perl-slop:pull-requests`.  The skill says how
   a pull request closes the issue that it fixes, and what to find out before
   a pull request to another project.
@@ -121,6 +124,52 @@ rule off without a word. `conformance check` with a flavor of the
 packaging-perl skill fails such a key. The check is `SkillGates` in
 `skills/packaging-perl/conformance/troglodyne.yml`, and the schema there lists
 the keys that the hooks read.
+
+A repository can also name a prose check under `prose_check`.  A prose check
+is a program that refuses prose that names what the repository keeps private,
+such as its hosts, its accounts or its customers.  The skill asks the model
+not to write those names.  The check catches the name that the model wrote
+anyway.  The hook cannot know these names, but the repository can.  The check
+can read its list from outside the repository, so the list is not public.
+
+```json
+{
+  "prose_check": "scripts/prose-check"
+}
+```
+
+The path is relative to the root of the repository, and the file must be
+executable.  The hook runs the check before each post that the
+`perl-slop:information-security` gate covers, and before each `git commit`.
+The check runs in the root of the repository, with no permission prompt, as
+`prove` or `make` runs code of the repository.  It gets these on standard
+input:
+
+- Each word of `gh`, `glab` or `git`, such as a title, a body or a message.
+  The directory after `git -C` is left out.
+- The content of each file from which `gh`, `glab` or `git` reads the prose,
+  in place of its name.  These are the files after `--body-file`, `--file`,
+  `--input` and `-F`, and the file after `-F name=@` of `gh api`.
+- Each word of `echo` or `printf`, and the body of each heredoc and here
+  string, because they can pipe the prose in.
+- For an MCP tool that posts, each string of the input of the tool.
+
+Other words of the command, such as the directory of a `cd`, are not sent.  A
+path can hold the name of the host that the session runs on, and a path is
+not prose.  The line numbers that the check prints count the lines of its
+input, so a word or a file starts a new line.
+
+If the check exits 0, the action is allowed.  Any other exit refuses the
+action.  The model gets what the check printed, standard error included, as
+the reason.  So print the line and the kind of name that matched, and not the
+name itself.  The model wrote the name, so it can find the name on that line.
+
+The hook also refuses the action in these cases, because the repository asked
+for the check:
+
+- The check is not an executable file.
+- The check exits with no output.  The reason then gives its exit status.
+- The check does not exit in 5 seconds.  The hook stops it.
 
 These skills are usually project skills in the `.claude/skills` directory of
 the same repository. Claude Code registers project skills only for a session
