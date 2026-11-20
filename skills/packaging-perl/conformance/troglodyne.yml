@@ -5,6 +5,9 @@ name: troglodyne
 description: The build, agent harness and tools of every troglodyne distribution
 variables:
   VERSION: '0.001'
+  # An install rewrites #!perl to the perl that has the modules.  A repository
+  # whose programs run from its checkout sets #!/usr/bin/env perl.
+  SHEBANG: '#!perl'
 checks:
   # Before ClaudeMd and ClaudeSettings, which run after it by name.  ClaudeMd
   # only reads its file, and ClaudeSettings would write settings that name no
@@ -42,6 +45,13 @@ checks:
       .preferred_modules.ini: templates/preferred_modules.ini
       .pod_stopwords: templates/pod_stopwords
       .tests-covering-map.pl: templates/tests-covering-map.pl
+  Shebangs:
+    shebang: '{{SHEBANG}}'
+    paths:
+      - bin
+      - script
+      - t
+      - .tests-covering-map.pl
   GitHooks:
     directory: git-hooks
     hooks:

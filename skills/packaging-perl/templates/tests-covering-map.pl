@@ -1,4 +1,4 @@
-#!/usr/bin/env perl
+{{SHEBANG}}
 use 5.014;
 use strict;
 use warnings FATAL => 'all';

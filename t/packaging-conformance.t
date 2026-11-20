@@ -30,6 +30,7 @@ BEGIN {
     eval { require Dist::Conformance;                        1 } or plan skip_all => 'Dist::Conformance is not installed';
     eval { require Dist::Conformance::Check::SystemPackages; 1 } or plan skip_all => 'Dist::Conformance is too old to have the check SystemPackages, which the flavors run';
     eval { require Dist::Conformance::Check::RefusedIniKeys; 1 } or plan skip_all => 'Dist::Conformance is too old to have the check RefusedIniKeys, which the flavors run';
+    eval { require Dist::Conformance::Check::Shebangs;       1 } or plan skip_all => 'Dist::Conformance is too old to have the check Shebangs, which the flavors run';
 }
 
 my $ROOT      = "$FindBin::Bin/..";
@@ -131,7 +132,7 @@ foreach my $flavor ( sort keys %FLAVOR ) {
         my @manual = map { @{ $_->{manual} } } @$plan;
         is_deeply( \@manual, [], 'and leaves nothing for a person' ) or diag( explain \@manual );
 
-        my %vars = ( %VARIABLES, PERL_FLOOR => $want->{floor}, VERSION => '0.001' );
+        my %vars = ( %VARIABLES, PERL_FLOOR => $want->{floor}, VERSION => '0.001', SHEBANG => '#!perl' );
         foreach my $template ( sort( keys %WRITES ), $want->{profile} ) {
             my $path = $WRITES{$template} // '.perlcriticrc';
             ( my $expected = slurp("$TEMPLATES/$template") ) =~ s/\{\{(\w+)\}\}/$vars{$1} \/\/ "{{$1}}"/ge;
@@ -224,6 +225,32 @@ subtest 'the compat flavor takes out ProhibitUnderscorePrivateSubs, and the stri
 
     is_deeply( $result{'troglodyne-compat'}, [qw{fail removed}], 'a compat profile that still enables it fails, and the update removes it' );
     is_deeply( $result{'troglodyne-5.040'},  [qw{pass kept}],    'while the strict template still enables it, so the strict profile keeps it' );
+};
+
+# An install rewrites #!perl to the path of the perl that has the modules, and
+# leaves env perl to the PATH of whoever starts the program.
+subtest 'programs start with #!perl, unless the repository runs them from its checkout' => sub {
+    foreach my $flavor ( sort keys %FLAVOR ) {
+        my $repo = repository( $flavor, %VARIABLES );
+        conformance($repo)->update;
+        mkdir "$repo/bin" or die "$repo/bin: $!";
+        spew( "$repo/bin/foo", "#!/usr/bin/env perl\nprint 1;\n" );
+        spew( "$repo/.perlcriticrc", slurp("$repo/.perlcriticrc") =~ s/^formats[ ]=[ ]\#!perl$/formats = #!\/usr\/bin\/env perl/mr );
+
+        my %status = map { $_->{check} => $_->{status} } @{ conformance($repo)->check };
+        is_deeply( [ @status{qw{Shebangs CriticProfile}} ], [qw{fail fail}], "$flavor: a program and a profile that name env perl fail" );
+        conformance($repo)->update;
+        is( slurp("$repo/bin/foo"), "#!perl\nprint 1;\n", "$flavor: and the update rewrites the program" );
+        like( slurp("$repo/.perlcriticrc"), qr/^formats\ =\ \#!perl$/m, "$flavor: and the formats of the profile" );
+    }
+
+    my $repo = repository( 'troglodyne-5.040', %VARIABLES, SHEBANG => '#!/usr/bin/env perl' );
+    conformance($repo)->update;
+    mkdir "$repo/bin" or die "$repo/bin: $!";
+    spew( "$repo/bin/foo", "#!/usr/bin/env perl\n" );
+    my @failed = grep { $_->{status} ne 'pass' } @{ conformance($repo)->check };
+    is_deeply( \@failed, [], 'a repository that sets SHEBANG to env perl keeps it' ) or diag( explain \@failed );
+    like( slurp("$repo/.perlcriticrc"), qr/^formats\ =\ \#!\/usr\/bin\/env\ perl$/m, 'and its profile accepts it' );
 };
 
 # The gates are only as good as what the hook makes of them, and a gate on a

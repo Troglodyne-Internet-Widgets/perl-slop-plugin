@@ -118,9 +118,11 @@ placeholders of the templates:
 | `CPAN_ID` | your PAUSE id, for the `Changes` entry |
 | `DATE` | today, `YYYY-MM-DD` |
 
-The flavor sets two more. `VERSION` is `0.001`, and `PERL_FLOOR` is `5.040` or
-`5.014`. If the floor is another version, for example `5.038`, set
-`PERL_FLOOR` in `variables` too. Quote each value that looks like a number.
+The flavor sets three more. `VERSION` is `0.001`, and `PERL_FLOOR` is `5.040`
+or `5.014`. If the floor is another version, for example `5.038`, set
+`PERL_FLOOR` in `variables` too. `SHEBANG` is `#!perl`. If the programs of the
+distribution run from its checkout, set it to `#!/usr/bin/env perl`, as *The
+shebang line* below says. Quote each value that looks like a number.
 
 Then write the files:
 
@@ -243,6 +245,31 @@ without it. See below.
 
 **`.mailmap`** is for `[Git::Contributors]`, which otherwise lists the same
 person once per address they have ever committed from.
+
+**The shebang line** of every Perl program is `#!perl`: the programs in
+`bin/` and `script/`, the tests in `t/`, and `.tests-covering-map.pl`. When
+ExtUtils::MakeMaker installs a program, it replaces a first line that names
+`perl` with the path of the perl that installs it. Module::Build does the
+same. That perl has the modules that the program needs, so the program runs
+for anybody, whatever is on their `PATH`. The install leaves
+`#!/usr/bin/env perl` alone, because its interpreter is `env`. Then the
+program runs the first perl on the `PATH` of whoever starts it. A service, a
+cron job or a task that root runs at boot usually finds only the system perl
+there, which lacks the modules.
+
+`#!perl` names no interpreter until the install rewrites it. So a program with
+it does not start from a checkout: run it as `perl -Ilib bin/foo`, or install
+it. A distribution whose programs run from its checkout, such as one that is
+not released yet, sets `SHEBANG` to `#!/usr/bin/env perl` in
+`.conformance.yml`. Set it back to `#!perl` when the programs run installed.
+
+`SHEBANG` goes to two places. The profile accepts only that line, through the
+`formats` of `logicLAB::RequireSheBang`. The check `Shebangs` makes sure that
+every program starts with it, and `conformance update` rewrites the first line
+of each program that does not. A program whose first line passes perl a
+switch, such as `-T`, is left for you to change. Change `SHEBANG` in
+`.conformance.yml`, never in the profile: the flavor pins those `formats`, so
+`conformance update` replaces a value that differs.
 
 **`metamerge.yml`** is not in the scaffold, because most distributions do not
 need it. A distribution that needs packages of the operating system, such as
@@ -470,7 +497,8 @@ sub rot13 ($string) { ( my $rotated = $string ) =~ tr/A-Za-z/N-ZA-Mn-za-m/; retu
 module, and then wants its POD `NAME` to match the package -- which in a `.t` is
 `main`. The message is "Pod NAME on line 7 does not match the package
 declaration", and it points nowhere near the cause. Start every test with
-`#!/usr/bin/env perl` and it reads it as the program it is.
+the shebang line of the distribution, `#!perl` unless `SHEBANG` says
+otherwise, and it reads it as the program it is.
 
 Only the hook will tell you. `all_critic_ok()`, which is what `[@TestingMania]`
 generates, reads `lib/` (or `blib/`) and never `t/`, so a release judges your

@@ -10,3 +10,6 @@ checks:
     file: .perlcriticrc
     template: templates/perlcriticrc
     replace: false
+    # The formats are the shebang of the standards, which Shebangs enforces.
+    pinned:
+      - logicLAB::RequireSheBang
