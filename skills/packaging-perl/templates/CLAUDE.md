@@ -53,7 +53,7 @@ Before you commit, apply these skills in this order:
    message.
 
 Then run `dzil podchecker` on the changed files, for example `dzil podchecker
-lib/Foo/Bar.pm`.  It checks the POD as Pod::Weaver writes it into the build.
+lib/Foo/Bar.pm`.  It reads the POD as Pod::Weaver writes it into the build.
 `podchecker` on a source file reports each `=func`, `=method` and `=attr` as an
 error, so its verdict says nothing here.  Run `perl -Ilib -c` on each changed
 script that no test loads, because the tests do not compile it.
@@ -106,6 +106,10 @@ dzil authordeps --missing | cpanm --notest
 dzil build && dzil test --release
 ```
 
+The version and the entry in `Changes` come from git.  Do not edit either by
+hand.  The version is the last release tag plus one.  The entry is the
+`Changelog:` trailers of the commits since that tag.
+
 ## Commits and pull requests
 
 Make a branch.  Do not commit to the default branch.
@@ -117,6 +121,17 @@ name".  The message has a job.  `perl-slop:reading-perl` describes a person who
 finds your line with `git blame` two years from now.  The message is the only
 thing that can still tell that person why.  For the same reason, the why goes
 in the message and not in a comment.
+
+If a user of the distribution can see the change, end the message with a
+`Changelog:` trailer.  Its value is the line for `Changes`, written for that
+user:
+
+```
+git commit --trailer 'Changelog: Refuse a pool that does not take O_DIRECT'
+```
+
+A commit that a user cannot see, such as a tidy or a change to a test, gets no
+trailer.  If no commit since the last release has one, the release stops.
 
 After you make sure that something works, say what you ran and what it said.
 A claim that the tests pass needs the line that shows them passing.  A claim

@@ -199,6 +199,22 @@ sub check_distribution {
     system( 'cp', '-a', $found[0], $copy ) == 0 or return fail("$label: copy $found[0]");    ## no critic (logicLAB::ProhibitShellDispatch) -- a tree with its modes and links, which core cannot copy
     my $dist = "$copy/" . basename( $found[0] );
 
+    # The version and the entry in Changes come from git, so the skill has the
+    # user commit the scaffold with a Changelog trailer before the first build.
+    # A run has no shell to do that with, so the checks do it on the copy.
+    my %git = (
+        GIT_CONFIG_GLOBAL   => '/dev/null',
+        GIT_CONFIG_NOSYSTEM => 1,
+        GIT_AUTHOR_NAME     => 'A. Tester',
+        GIT_AUTHOR_EMAIL    => 'tester@test.test',
+        GIT_COMMITTER_NAME  => 'A. Tester',
+        GIT_COMMITTER_EMAIL => 'tester@test.test',
+    );
+    foreach my $git ( [qw{git init -q}], [qw{git add -A}], [ qw{git commit -q --no-verify --allow-empty -m Scaffold --trailer}, 'Changelog: Initial release' ] ) {
+        my ( $said, $status ) = $sandboxed->( $dist, \%git, @$git );
+        $status == 0 or return fail("$label: @$git: $said");
+    }
+
     my ( $test, $tested ) = $sandboxed->( $dist, { RELEASE_TESTING => 1, AUTHOR_TESTING => 1 }, qw{dzil test} );
     is( $tested, 0, "$label: RELEASE_TESTING=1 AUTHOR_TESTING=1 dzil test passes" ) or diag( substr( $test, -3000 ) );
 

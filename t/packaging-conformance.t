@@ -42,7 +42,6 @@ my %VARIABLES = (
     COPYRIGHT_HOLDER => 'Test Co',
     YEAR             => '2026',
     CPAN_ID          => 'TESTER',
-    DATE             => '2026-11-03',
 );
 
 # Where the scaffold puts each template, whichever flavor it is.
@@ -295,14 +294,14 @@ subtest 'metamerge.yml declares system packages that a packager can install' => 
 
 subtest 'a placeholder that nothing fills stops its file, and says which' => sub {
     my %without = %VARIABLES;
-    delete $without{DATE};
+    delete $without{CPAN_ID};
     my $repo = repository( 'troglodyne-5.040', %without );
     my $plan = conformance($repo)->update;
 
-    ok( !-e "$repo/Changes", 'Changes is not written with {{DATE}} in it' );
-    ok( -e "$repo/dist.ini", 'while the files that do not need it are' );
+    ok( !-e "$repo/dist.ini", 'dist.ini is not written with {{CPAN_ID}} in it' );
+    ok( -e "$repo/Changes",   'while the files that do not need it are' );
     my @manual = map { @{ $_->{manual} } } @$plan;
-    is( scalar( grep { /DATE/ } @manual ), 1, 'and the update names the variable' ) or diag( explain \@manual );
+    is( scalar( grep { /CPAN_ID/ } @manual ), 1, 'and the update names the variable' ) or diag( explain \@manual );
 };
 
 done_testing();
