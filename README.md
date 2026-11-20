@@ -145,11 +145,19 @@ The check runs in the root of the repository, with no permission prompt, as
 `prove` or `make` runs code of the repository.  It gets these on standard
 input:
 
-- The whole Bash command, with each quoted body and each heredoc in it.
-- The content of each file from which `gh`, `glab` or `git` reads the prose.
-  These are the files after `--body-file`, `--file`, `--input` and `-F`, and
-  the file after `-F name=@` of `gh api`.
+- Each word of `gh`, `glab` or `git`, such as a title, a body or a message.
+  The directory after `git -C` is left out.
+- The content of each file from which `gh`, `glab` or `git` reads the prose,
+  in place of its name.  These are the files after `--body-file`, `--file`,
+  `--input` and `-F`, and the file after `-F name=@` of `gh api`.
+- Each word of `echo` or `printf`, and the body of each heredoc and here
+  string, because they can pipe the prose in.
 - For an MCP tool that posts, each string of the input of the tool.
+
+Other words of the command, such as the directory of a `cd`, are not sent.  A
+path can hold the name of the host that the session runs on, and a path is
+not prose.  The line numbers that the check prints count the lines of its
+input, so a word or a file starts a new line.
 
 If the check exits 0, the action is allowed.  Any other exit refuses the
 action.  The model gets what the check printed, standard error included, as

@@ -411,34 +411,64 @@ sub run_prose_check {
 
 =head2 $prose = command_prose($command, $dir)
 
-The prose of a Bash command that posts or commits: the command itself, with
-every quoted body and heredoc in it, and the content of each file that a
-C<gh>, C<glab> or C<git> in it reads the prose from.  Those are the files
-after C<--body-file>, C<--file>, C<--input> and C<-F>, and after C<-F name=@>
-of C<gh api>.  A relative file is relative to C<$dir>.
+The prose of a Bash command that posts or commits, one word or body on each
+line:
+
+=over
+
+=item *
+
+Each word of a C<gh>, C<glab> or C<git> in it, such as a title, a body or a
+message.  In place of a file that the prose is read from, the content of that
+file: the file after C<--body-file>, C<--file>, C<--input> or C<-F>, or after
+C<-F name=@> of C<gh api>.  A relative file is relative to C<$dir>.  The
+directory after C<git -C> is left out.
+
+=item *
+
+Each word of an C<echo> or a C<printf>, which can pipe the prose in.
+
+=item *
+
+The body of each heredoc and each here string.
+
+=back
+
+Other words, such as the directory of a C<cd>, are paths and not prose, and
+are left out.  A path can hold the name of the host that the session runs on.
 
 =cut
 
 sub command_prose {
     my ( $command, $dir ) = @_;
 
-    my @prose = ($command);
+    my @prose;
     foreach my $simple ( shell_commands($command) ) {
-        next if bare_text( $simple->{words} ) !~ m{\A(?:\S*/)?(?:gh|glab|git)(?!\S)};
-        my @words = map { $_->{text} } @{ $simple->{words} };
+        push @prose, @{ $simple->{input} };
+        my $program = bare_text( $simple->{words} ) =~ m{\A(?:\S*/)?(gh|glab|git|echo|printf)(?!\S)} ? $1 : next;
+        my @words   = map { $_->{text} } @{ $simple->{words} };
+        my $reads   = $program ne 'echo' && $program ne 'printf';
         while ( defined( my $word = shift @words ) ) {
-            my $file;
-            if ( $PROSE_FILE_FLAG{$word} ) {
-                my $value = shift(@words) // next;
-                ($file) = $value =~ $FIELD_FROM_FILE_RX ? $1 : index( $value, '=' ) >= 0 ? () : $value;
+            if ( $program eq 'git' && $word eq '-C' ) {
+                shift @words;
+                next;
             }
-            elsif ( $word =~ $PROSE_FILE_OPT_RX ) {
+            my $file;
+            if ( $reads && $PROSE_FILE_FLAG{$word} ) {
+                my $value = shift(@words) // next;
+                if    ( $value =~ $FIELD_FROM_FILE_RX ) { $file = $1 }
+                elsif ( index( $value, '=' ) >= 0 )     { push @prose, $value }
+                else                                    { $file = $value }
+            }
+            elsif ( $reads && $word =~ $PROSE_FILE_OPT_RX ) {
                 $file = $1;
+            }
+            else {
+                push @prose, $word;
             }
             next if !defined $file || $file eq '-';
             open( my $fh, '<', File::Spec->rel2abs( $file, $dir ) ) or next;
-            push @prose, do { local $/ = undef; <$fh> }
-              // q{};
+            push @prose, do { local $/ = undef; <$fh> } // q{};
             close($fh);
         }
     }
