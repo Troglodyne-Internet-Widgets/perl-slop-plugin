@@ -593,4 +593,60 @@ subtest 'the hook as Claude Code runs it' => sub {
     ok( -s "$data/loads-sess-run.jsonl", 'and records the load where CLAUDE_PLUGIN_DATA says' );
 };
 
+# The check refuses the made-up name bogushost, and names the line it is on, as
+# a check of a real repository refuses the names of its fleet.
+subtest 'a post or a commit waits for the prose check of the repository' => sub {
+    my $check = <<'SH';
+#!/bin/sh
+found=$(grep -n bogushost) || exit 0
+echo "$found" | cut -d: -f1 | sed 's/^/line /; s/$/: a name of the fleet/'
+exit 1
+SH
+    my $root = repo( '.perl-slop.json' => $JSON->encode( { prose_check => 'checks/prose' } ), 'checks/prose' => $check, 'body.md' => "words\nabout bogushost\n", 'clean.md' => "words\n" );
+    chmod( 0755, "$root/checks/prose" ) or die $!;
+    git( $root, 'add', '-A' );
+    git( $root, 'commit', '-q', '-m', 'config' );
+
+    my $ready = transcript( skill( 's1', $PROSE ), skill( 's2', $PULL ) );
+    my $post  = sub { my ($command) = @_; return run_bash( $command, $ready, cwd => $root ) };
+
+    like( $post->('gh issue comment 1 --body "it was bogushost"'), qr/line 1: a name of the fleet/, 'a body that names the fleet is refused, with what the check said' );
+    is( $post->('gh issue comment 1 --body "it was $host"'), undef, 'and one that names nothing is allowed' );
+    like( $post->("gh issue create --title x --body-file body.md"),       qr/line 3: a name of the fleet/, 'the content of a --body-file is checked' );
+    like( $post->("gh issue create --title x --body-file=$root/body.md"), qr/a name of the fleet/,         'and of --body-file= with a path' );
+    like( $post->('gh pr create -t x -F body.md -a @me'),                 qr/a name of the fleet/,         'and of -F' );
+    like( $post->('gh api repos/o/r/issues/1/comments -F body=@body.md'), qr/a name of the fleet/,         'and of a gh api field read from a file' );
+    is( $post->('gh issue create --title x --body-file clean.md'), undef, 'a body file that names nothing is allowed' );
+    like( $post->(qq{gh pr create -a \@me --body "\$(cat <<'EOF'\nsee bogushost\nEOF\n)"}), qr/a name of the fleet/, 'and a heredoc body is checked' );
+    is( $post->('grep -F body.md x && gh issue comment 1 --body y'), undef, 'a file named to another program is not prose' );
+
+    like( $post->("git commit -m 'fix bogushost'"), qr/a name of the fleet/, 'a commit message is checked' );
+    like( $post->('git commit -F body.md'),         qr/a name of the fleet/, 'and a message from a file' );
+    is( $post->("git commit -m 'fix \$host'"), undef, 'and a message that names nothing is allowed' );
+
+    my $mcp = sub { my ($body) = @_; return refused( tool_name => 'mcp__github__add_issue_comment', tool_input => { issue_number => 1, body => $body }, transcript_path => $ready, cwd => $root ) };
+    like( $mcp->('bogushost was down'), qr/a name of the fleet/, 'the input of an MCP tool that posts is checked' );
+    is( $mcp->('$host was down'), undef, 'and allowed when it names nothing' );
+
+    is( run_bash( 'gh issue comment 1 --body bogushost', $ready, cwd => repo() ), undef, 'a repository with no prose check allows anything' );
+    like( run_bash( 'gh issue comment 1 --body bogushost', transcript(), cwd => $root ), qr/information-security/, 'the skill is asked for before the check runs' );
+
+    my $broken = sub {
+        my ( $name, $content, $executable ) = @_;
+        my $other = repo( '.perl-slop.json' => $JSON->encode( { prose_check => $name } ), defined $content ? ( $name => $content ) : () );
+        chmod( 0755, "$other/$name" ) or die $! if $executable;
+        return run_bash( 'gh issue comment 1 --body y', $ready, cwd => $other );
+    };
+    like( $broken->( 'gone', undef ),                                              qr/gone, is not an executable file/,  'a check that is not there refuses' );
+    like( $broken->( 'plain', "#!/bin/sh\nexit 0\n" ),                             qr/plain, is not an executable file/, 'and so does one that is not executable' );
+    like( $broken->( 'quiet', "#!/bin/sh\nexit 2\n", 'executable' ),               qr/it exited 2 with no reason/,       'a check that fails with nothing to say refuses, and says how it exited' );
+    like( $broken->( 'killed', "#!/bin/sh\nkill -9 \$\$\n", 'executable' ), qr/it exited 137 with no reason/, 'a check that a signal ends refuses, with the status that a shell reports' );
+    like( $broken->( 'loud', "#!/bin/sh\necho oops >&2\nexit 3\n", 'executable' ), qr/refused this:\noops\n/,            'and what it prints to standard error is the reason' );
+    {
+        no warnings 'once';    # the hook is required at run time, so perl sees one use
+        local $PerlSlop::SkillGates::PROSE_CHECK_SECONDS = 1;
+        like( $broken->( 'stuck', "#!/bin/sh\nexec sleep 30\n", 'executable' ), qr/no answer in 1 seconds/, 'a check that does not answer in time refuses' );
+    }
+};
+
 done_testing();

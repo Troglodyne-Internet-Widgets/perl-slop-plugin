@@ -10,8 +10,10 @@ use Cwd            ();
 use File::Basename ();
 use File::Path     ();
 use File::Spec     ();
+use File::Temp     ();
 use JSON::PP       ();    ## no critic (PreferredModules) -- core, so the hook runs on any perl; see $JSON_CLASS
 use List::Util     ();
+use POSIX          ();
 use Time::HiRes    ();
 use Time::Local    ();
 
@@ -30,6 +32,9 @@ It also runs for PostToolUse on the Skill tool, to record the load, and for
 SessionStart after a compaction, to forget the loads before it.  See
 L</record_load(\%input)>.  It runs for PostToolUse on Bash, Read, Grep and Glob
 to count the reads of a turn.  See C<read_nudge>.
+
+Before a post or a commit, it also runs the prose check that a repository
+names in F<.perl-slop.json>.  See C<prose_check_gate>.
 
 A skill counts as loaded when the transcript shows a Skill call for it, or
 the text of the skill that a user's C</name> loads, or when this hook recorded
@@ -65,6 +70,19 @@ our %BASE = (
 );
 
 our $CONFIG_NAME = '.perl-slop.json';
+
+# How long the prose check of a repository can take.  The hook itself has 10
+# seconds in hooks.json, and it also reads the transcript.
+our $PROSE_CHECK_SECONDS = 5;
+
+# The flags of gh, glab and git that name a file that holds the prose: the
+# body of an issue or a pull request, the input of gh api, or the message of
+# a commit.
+our %PROSE_FILE_FLAG   = map { $_ => 1 } qw{--body-file --file --input -F};
+our $PROSE_FILE_OPT_RX = qr/\A--(?:body-file|file|input)=(.+)\z/s;
+
+# A field of gh api that reads its value from a file, as in -F body=@notes.md.
+our $FIELD_FROM_FILE_RX = qr/\A[^=\s]+=@(.+)\z/s;
 
 # The transcript can be tens of megabytes, and JSON::PP is slow on long lines.
 # So an XS parser when there is one, and the core one when there is not.
@@ -285,7 +303,7 @@ sub decide {
         my $command = $args->{command} // return;
         my $dir     = command_dir( $command, $input->{cwd} );
         if ( is_commit($command) ) {
-            my $out = commit_gate( $input, $dir );
+            my $out = commit_gate( $input, $dir ) // prose_check_gate( $dir, command_prose( $command, $dir ) );
             return $out if $out;
         }
         if ( is_signal($command) ) {
@@ -305,8 +323,8 @@ sub decide {
             return $out if $out;
         }
         if ( is_publish($command) ) {
-            my $out = publish_gate($input);
-            return $out if $out;
+            my $out = publish_gate($input) // prose_check_gate( $dir, command_prose( $command, $dir ) );
+            return $out            if $out;
             return assignee_gate() if is_unassigned_pr($command);
             return;
         }
@@ -314,8 +332,138 @@ sub decide {
         return edit_gate( $input, [ map { [$_] } @files ] ) if @files;
     }
 
-    return publish_gate($input) if $tool =~ $PUBLISH_TOOL_RX;
+    if ( $tool =~ $PUBLISH_TOOL_RX ) {
+        return publish_gate($input) // prose_check_gate( $input->{cwd} // Cwd::getcwd(), join( "\n", strings_in($args) ) );
+    }
     return;
+}
+
+=head2 $output = prose_check_gate($dir, $prose)
+
+Refuses a post or a commit whose C<$prose> the repository at C<$dir> rejects.
+A repository names its check under C<prose_check> in F<.perl-slop.json>: a
+path to an executable, relative to its root.  The check gets C<$prose> on
+standard input and runs in the root.  If it exits 0, the action is allowed.
+Any other exit refuses it, with what the check printed as the reason.  A
+check that is not an executable file, or that does not exit in
+C<$PROSE_CHECK_SECONDS>, refuses too, because the repository asked for it.
+
+=cut
+
+sub prose_check_gate {
+    my ( $dir, $prose ) = @_;
+
+    my $root  = checkout_root($dir)          // return;
+    my $named = config($root)->{prose_check} // return;
+    return if ref $named;
+
+    my $check = File::Spec->rel2abs( $named, $root );
+    my $about = "The prose check of $root, $named,";
+    return deny("$about is not an executable file.  Ask the user to fix it or to take it out of $CONFIG_NAME.  Do not post or commit another way.") if !-f $check || !-x $check;
+
+    my ( $status, $said ) = run_prose_check( $check, $root, $prose );
+    return if $status == 0;
+
+    $said =~ s/\s+\z//;
+    $said = $status < 0 ? "it gave no answer in $PROSE_CHECK_SECONDS seconds" : "it exited $status with no reason" if !length $said;
+    return deny( "$about refused this:\n$said\n" . 'Take out what it names, then try again.  If the check is wrong, ask the user.  Do not post or commit another way.' );
+}
+
+=head2 ($status, $output) = run_prose_check($check, $root, $prose)
+
+Runs the program at C<$check> in C<$root>, with C<$prose> on standard input,
+and returns its exit status and what it printed, standard error included.
+The status is -1 when it did not exit in C<$PROSE_CHECK_SECONDS>, and is then
+killed, or when it could not start.  A check that a signal ended has 128 plus
+the number of the signal, as a shell reports it.
+
+=cut
+
+sub run_prose_check {
+    my ( $check, $root, $prose ) = @_;
+
+    my $in = File::Temp->new;
+    print {$in} $prose;
+    close($in) or return ( -1, "could not write its input: $!" );
+
+    my $pid = open( my $out, '-|' ) // return ( -1, "could not start: $!" );
+    if ( !$pid ) {
+        open( STDIN, '<', $in->filename ) && open( STDERR, '>&', \*STDOUT ) && chdir($root) && exec {$check} $check;
+        POSIX::_exit(127);
+    }
+
+    my $said = eval {
+        local $SIG{ALRM} = sub { die "timeout\n" };
+        Time::HiRes::alarm($PROSE_CHECK_SECONDS);
+        local $/ = undef;
+        my $text = <$out> // q{};
+        Time::HiRes::alarm(0);
+        $text;
+    };
+    if ( !defined $said ) {
+        kill 'KILL', $pid;
+        close($out);
+        return ( -1, q{} );
+    }
+    close($out);
+    return ( $? & 127 ? 128 + ( $? & 127 ) : $? >> 8, $said );
+}
+
+=head2 $prose = command_prose($command, $dir)
+
+The prose of a Bash command that posts or commits: the command itself, with
+every quoted body and heredoc in it, and the content of each file that a
+C<gh>, C<glab> or C<git> in it reads the prose from.  Those are the files
+after C<--body-file>, C<--file>, C<--input> and C<-F>, and after C<-F name=@>
+of C<gh api>.  A relative file is relative to C<$dir>.
+
+=cut
+
+sub command_prose {
+    my ( $command, $dir ) = @_;
+
+    my @prose = ($command);
+    foreach my $simple ( shell_commands($command) ) {
+        next if bare_text( $simple->{words} ) !~ m{\A(?:\S*/)?(?:gh|glab|git)(?!\S)};
+        my @words = map { $_->{text} } @{ $simple->{words} };
+        while ( defined( my $word = shift @words ) ) {
+            my $file;
+            if ( $PROSE_FILE_FLAG{$word} ) {
+                my $value = shift(@words) // next;
+                ($file) = $value =~ $FIELD_FROM_FILE_RX ? $1 : index( $value, '=' ) >= 0 ? () : $value;
+            }
+            elsif ( $word =~ $PROSE_FILE_OPT_RX ) {
+                $file = $1;
+            }
+            next if !defined $file || $file eq '-';
+            open( my $fh, '<', File::Spec->rel2abs( $file, $dir ) ) or next;
+            push @prose, do { local $/ = undef; <$fh> }
+              // q{};
+            close($fh);
+        }
+    }
+    return join "\n", @prose;
+}
+
+=head2 @strings = strings_in($data)
+
+Every string in C<$data>, a structure of hashes and arrays such as the input
+of an MCP tool, in the order of its keys.
+
+=cut
+
+sub strings_in {
+    my ($data) = @_;
+
+    my ( @strings, @todo );
+    @todo = ($data);
+    while (@todo) {
+        my $item = shift @todo;
+        if    ( ref $item eq 'HASH' )         { unshift @todo, @{$item}{ sort keys %$item } }
+        elsif ( ref $item eq 'ARRAY' )        { unshift @todo, @$item }
+        elsif ( defined $item && !ref $item ) { push @strings, $item }
+    }
+    return @strings;
 }
 
 =head2 $output = edit_gate(\%input, \@files)
@@ -1577,11 +1725,8 @@ sub configured {
     my ( $root, $gate, $path ) = @_;
     return if !defined $root || !defined $path;
 
-    my $file = File::Spec->catfile( $root, $CONFIG_NAME );
-    open( my $fh, '<', $file ) or return;
-    my $config = read_json($fh);
-    close($fh);
-    return if ref $config ne 'HASH' || ref $config->{$gate} ne 'HASH';
+    my $config = config($root);
+    return if ref $config->{$gate} ne 'HASH';
 
     my @skills;
     foreach my $glob ( sort keys %{ $config->{$gate} } ) {
@@ -1589,6 +1734,21 @@ sub configured {
         push @skills, ref $names eq 'ARRAY' ? @$names : $names if $path =~ glob_rx($glob);
     }
     return @skills;
+}
+
+=head2 \%config = config($root)
+
+What F<.perl-slop.json> at C<$root> holds, or an empty hash when it is not
+there or is not a JSON object.
+
+=cut
+
+sub config {
+    my ($root) = @_;
+    open( my $fh, '<', File::Spec->catfile( $root, $CONFIG_NAME ) ) or return {};
+    my $config = read_json($fh);
+    close($fh);
+    return ref $config eq 'HASH' ? $config : {};
 }
 
 =head2 $data = read_json($fh)
