@@ -269,8 +269,9 @@ exclude_functions = print
 # A method takes the arguments of its interface, whether it reads them or not.
 allow_unused_subroutine_arguments = 1
 # Anything that returns a guard, which does its work by being held to the end of
-# its scope: a mock, a mocked file, a change of directory, a lock.
-# allow_if_computed_by = Test::MockModule->new Test::MockFile->file
+# its scope: a mock, a mocked file, or a change of directory that File::pushd
+# undoes when the object goes.
+allow_if_computed_by = Test::MockModule->new Test::MockFile->file Test::MockFile->file_from_disk Test::MockFile->symlink Test::MockFile->dir Test::MockFile->new_dir pushd tempd
 [Variables::ProtectPrivateVars]
 [Variables::RequireLexicalLoopIterators]
 # A block foreach with no loop variable, whose $_ the body can clobber.
