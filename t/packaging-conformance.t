@@ -226,6 +226,25 @@ subtest 'the compat flavor takes out ProhibitUnderscorePrivateSubs, and the stri
     is_deeply( $result{'troglodyne-5.040'},  [qw{pass kept}],    'while the strict template still enables it, so the strict profile keeps it' );
 };
 
+# An install rewrites #!perl to the path of the perl that has the modules, and
+# leaves env perl to the PATH of whoever starts the program.
+subtest 'the profile requires #!perl, unless the repository overrides it' => sub {
+    plan skip_all => 'Dist::Conformance is too old to write a profile with overrides' unless Dist::Conformance::Check->can('adopt');
+
+    foreach my $flavor ( sort keys %FLAVOR ) {
+        my $repo = repository( $flavor, %VARIABLES );
+        conformance($repo)->update;
+        like( slurp("$repo/.perlcriticrc"), qr/^\[logicLAB::RequireSheBang\]\nformats[ ]=[ ]\#!perl\n/m, "$flavor: the profile accepts only #!perl" );
+    }
+
+    my $repo = repository( 'troglodyne-5.040', %VARIABLES );
+    spew( "$repo/.conformance.yml", slurp("$repo/.conformance.yml") . "checks:\n  CriticProfile:\n    overrides:\n      logicLAB::RequireSheBang:\n        formats: '#!/usr/bin/env perl'\n" );
+    conformance($repo)->update;
+    like( slurp("$repo/.perlcriticrc"), qr/^\[logicLAB::RequireSheBang\]\nformats[ ]=[ ]\#!\/usr\/bin\/env[ ]perl\n/m, 'and one that overrides its formats accepts env perl' );
+    my @failed = grep { $_->{status} ne 'pass' } @{ conformance($repo)->check };
+    is_deeply( \@failed, [], 'and passes' ) or diag( explain \@failed );
+};
+
 # The gates are only as good as what the hook makes of them, and a gate on a
 # skill whose plugin a clone cannot install refuses every edit it covers.
 subtest 'the scaffold gates its prose, and can install what the gates ask for' => sub {
