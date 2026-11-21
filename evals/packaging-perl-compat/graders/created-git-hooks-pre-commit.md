@@ -1,4 +1,4 @@
 ---
 type: file_exists
-path: "Text-Rot13/.git/hooks/pre-commit"
+path: "Text-Rot13/git-hooks/pre-commit"
 ---

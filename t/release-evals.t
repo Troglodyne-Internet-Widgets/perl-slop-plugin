@@ -307,8 +307,13 @@ sub failures {
     return scalar grep { !$_ } Test::More->builder->summary;
 }
 
-my $have_claude = grep { -x "$_/claude" } split /:/, $ENV{PATH} // q{};    ## no critic (ValuesAndExpressions::ProhibitFiletest_rwxRWX) -- the mode bit is how a shell finds a program on PATH
-plan skip_all => 'claude is not on the PATH' unless $have_claude;
+# Whether a program of this name is on the PATH.
+sub on_path {
+    my ($program) = @_;
+    return scalar grep { -x "$_/$program" } split /:/, $ENV{PATH} // q{};    ## no critic (ValuesAndExpressions::ProhibitFiletest_rwxRWX) -- the mode bit is how a shell finds a program on PATH
+}
+
+plan skip_all => q{claude is not on the PATH} unless on_path(q{claude});
 
 my $output = sub {
     my (@cmd) = @_;
@@ -355,6 +360,13 @@ ok( $sandbox, 'bwrap can make the namespaces that the sandbox of a run needs' ) 
     exit 1;
 };
 
+# The sandbox of a run carries its network through socat, and refuses to start without it.
+ok( on_path(q{socat}), 'socat is on the PATH, so the sandbox of a run can start' ) or do {
+    diag('Run scripts/setup-eval-sandbox, then run this again.');
+    done_testing();
+    exit 1;
+};
+
 my $installed = eval {
     my $config = $ENV{CLAUDE_CONFIG_DIR} // "$ENV{HOME}/.claude";
     JSON::PP->new->decode( slurp("$config/plugins/installed_plugins.json") )->{plugins};
@@ -367,11 +379,18 @@ foreach my $dir ( sort keys %EVAL_PLUGIN ) {
     is( system( 'cp', '-a', $install, ".eval-plugins/$dir" ), 0, "and it is copied to .eval-plugins/$dir" );
 }
 
-# Outside /tmp, which the sandbox of a run denies.
-my $RUN_TMP = ( $ENV{XDG_CACHE_HOME} || "$ENV{HOME}/.cache" ) . '/perl-slop-evals';
+# Outside /tmp, which the sandbox of a run denies.  The name is short because
+# the TMPDIR of a run, which is 25 characters longer, must stay within 74: the
+# sandbox makes its bridge sockets there, and a socket path has a length limit.
+my $RUN_TMP = ( $ENV{XDG_CACHE_HOME} || "$ENV{HOME}/.cache" ) . '/pse';
 mkdir( dirname($RUN_TMP) );
 mkdir($RUN_TMP);
 ok( -d $RUN_TMP, "the runs are made under $RUN_TMP" );
+ok( length($RUN_TMP) <= 49, "$RUN_TMP is short enough for the bridge sockets of the sandbox of a run" ) or do {
+    diag('Set XDG_CACHE_HOME to a shorter directory outside /tmp, then run this again.');
+    done_testing();
+    exit 1;
+};
 
 # The paths that the sandbox of a run lets it write, but also denies, which
 # leaves them read-only.
@@ -389,6 +408,11 @@ sub denied_writes {
     ];
 }
 
+# claude plugin eval refuses a case that grants Bash while ~/.ssh holds a
+# symbolic link, such as a link to the socket of an agent.  An empty tmpfs over
+# it also hides the keys from the runs.
+my @HIDE_SSH = -d "$ENV{HOME}/.ssh" ? ( qw{bwrap --dev-bind / / --die-with-parent --tmpfs}, "$ENV{HOME}/.ssh", '--' ) : ();
+
 foreach my $skill (@changed) {
     my $json = tempdir( CLEANUP => 1 ) . '/result.json';
 
@@ -399,6 +423,7 @@ foreach my $skill (@changed) {
         open( STDIN,     '<',  '/dev/null' ) or die "/dev/null: $!";
         local $ENV{TMPDIR} = $RUN_TMP;
         system(                                                         ## no critic (logicLAB::ProhibitShellDispatch) -- the eval is a run of claude
+            @HIDE_SSH,
             qw{claude plugin eval .},      '--case',  "$skill-*",
             '--runs',                      $RUNS,     qw{--ablation none --threshold},                   $THRESHOLD,
             '--max-cost-usd',              $COST_CAP, qw{--trust-plugin --no-publish --scaffold --json}, $json,
