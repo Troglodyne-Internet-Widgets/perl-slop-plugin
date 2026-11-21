@@ -21,11 +21,14 @@ forget.  So the plugin also has hooks, in `hooks/hooks.json`, which refuse an
 action until the skill that it needs is loaded.  A refusal names the skills
 that are missing, and the model loads them and tries again.
 
-`perl-slop:information-security` is for prose in any language, so its gates
+The prose skills are `perl-slop:information-security` and
+`perl-slop:situational-awareness`.  The first keeps the details of a site out
+of what you write.  The second makes you check a claim about the environment
+before you state it.  Both apply to prose in any language, so their gates
 apply to every project, Perl or not.
 
-- Before an edit to any file, `perl-slop:information-security`, because an
-  edit can add comments.  This covers the Edit and Write tools.  For a Bash
+- Before an edit to any file, the prose skills, because an edit can add
+  comments.  This covers the Edit and Write tools.  For a Bash
   command that writes a file, the gate applies only to a Perl file, as in the
   next item.  The hook finds the files that a command writes by their Perl
   names.  A gate on every redirect also refuses `2>&1`, so there is none.
@@ -35,8 +38,7 @@ apply to every project, Perl or not.
   `sed -i`, `perl -i`, `python3`, a redirect, `tee`, `cp`, `mv`, `install` or
   `patch`.  A Perl file is a `.pm`, `.pl`, `.t` or `.psgi` file, or a file
   with a `perl` shebang.
-- Before any `git commit`, `perl-slop:information-security`, for the commit
-  message.  When any changed file is Perl, also `perl-slop:data-perl`,
+- Before any `git commit`, the prose skills, for the commit message.  When any changed file is Perl, also `perl-slop:data-perl`,
   `perl-slop:testing-perl` and `perl-slop:reviewing-perl`.  Each must be
   loaded after the commit at `HEAD` of that repository, by its commit time.
   A `git commit` that failed does not move `HEAD`, so it does not count, even
@@ -44,13 +46,12 @@ apply to every project, Perl or not.
   `git status` shows, staged or not, because a command that adds and commits
   has not added anything yet when the hook runs.
 - Before a post to an issue, a pull request, a review, a release or a gist,
-  `perl-slop:information-security`.  This covers `gh` and `glab` commands
+  the prose skills.  This covers `gh` and `glab` commands
   that write, and `gh api` with a field or a write method.  It also covers MCP
   tools whose names say that they create, add, update, post, submit, reply to
   or merge one of those.
 - Before a post or a commit, the prose check of the repository, when it
-  has one.  The hook runs it after `perl-slop:information-security` is
-  loaded.  A section below says how a repository names its check.
+  has one.  The hook runs it after the prose skills are loaded.  A section below says how a repository names its check.
 - Before every `gh pr create`, `perl-slop:pull-requests`.  The skill says how
   a pull request closes the issue that it fixes, and what to find out before
   a pull request to another project.
@@ -79,8 +80,8 @@ apply to every project, Perl or not.
   `perl-slop:debugging-perl`.  `perl -d:NYTProf` loads a profiler, so it does
   not count.  The same gate covers an edit that adds `$DB::single`.  A run of
   the debugger with no terminal has pitfalls, and the skill lists them.
-- On every prompt until it is loaded, a reminder of
-  `perl-slop:information-security`, because a reply to the user is prose too.
+- On every prompt until they are loaded, a reminder of the prose skills,
+  because a reply to the user is prose too.
   When a prompt is about speed in a Perl project, a reminder of
   `perl-slop:profiling-perl`.  When a prompt says upstream, or names a pull
   request to something other than master or main, a reminder of
@@ -139,8 +140,8 @@ can read its list from outside the repository, so the list is not public.
 ```
 
 The path is relative to the root of the repository, and the file must be
-executable.  The hook runs the check before each post that the
-`perl-slop:information-security` gate covers, and before each `git commit`.
+executable.  The hook runs the check before each post that the gate
+for the prose skills covers, and before each `git commit`.
 The check runs in the root of the repository, with no permission prompt, as
 `prove` or `make` runs code of the repository.  It gets these on standard
 input:

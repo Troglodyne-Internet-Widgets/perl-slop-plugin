@@ -110,10 +110,14 @@ sub run_bash {
     return refused( tool_name => 'Bash', tool_input => { command => $command }, transcript_path => $transcript, tool_use_id => 'current', %more );
 }
 
-my @READING   = map { "perl-slop:$_" } qw{reading-perl information-security};
-my $PROSE     = 'perl-slop:information-security';
+# The skills that every gate for prose asks for.
+my @PROSE     = map { "perl-slop:$_" } qw{information-security situational-awareness};
+my @READING   = ( q{perl-slop:reading-perl}, @PROSE );
 my $PULL      = 'perl-slop:pull-requests';
-my @FINISHING = ( ( map { "perl-slop:$_" } qw{data-perl testing-perl reviewing-perl} ), $PROSE );
+my @FINISHING = ( ( map { "perl-slop:$_" } qw{data-perl testing-perl reviewing-perl} ), @PROSE );
+
+# The Skill calls that every gate for prose needs.
+sub prose { return map { skill( "p$_", $PROSE[$_] ) } 0 .. $#PROSE }
 
 # The Skill calls that an edit to Perl needs.
 sub reading { return map { skill( "r$_", $READING[$_] ) } 0 .. $#READING }
@@ -128,7 +132,7 @@ subtest 'an edit to Perl waits for reading-perl and information-security' => sub
     like( edit( $file, transcript( skill( 's1', 'perl-slop:reading-perl' ) ) ), qr/information-security/, 'one of two is not enough' );
     like( edit( $file, transcript( reading(), compacted() ) ), qr/reading-perl/, 'refused again after a compaction' );
 
-    my @by_name = map { said("Base directory for this skill: /x/skills/$_\n\nI'm using it") } qw{reading-perl information-security};
+    my @by_name = map { said("Base directory for this skill: /x/skills/$_\n\nI'm using it") } qw{reading-perl information-security situational-awareness};
     is( edit( $file, transcript(@by_name) ), undef, 'a skill that a user loaded by its /name counts' );
     like(
         edit( $file, transcript( said("The following skills were invoked EARLIER in this session\nBase directory for this skill: /x/skills/reading-perl\n") ) ),
@@ -136,8 +140,9 @@ subtest 'an edit to Perl waits for reading-perl and information-security' => sub
     );
 
     like( edit( "$root/README.md", transcript() ), qr/information-security/, 'an edit to a file in any language waits for information-security' );
+    like( edit( "$root/README.md", transcript( skill( q{p0}, $PROSE[0] ) ) ), qr/situational-awareness/, q{and for situational-awareness, which is the other half of the prose gate} );
     unlike( edit( "$root/README.md", transcript() ), qr/reading-perl/, 'but not for reading-perl' );
-    is( edit( "$root/README.md", transcript( skill( 's1', $PROSE ) ) ), undef, 'and is allowed once it is loaded' );
+    is( edit( "$root/README.md", transcript( prose() ) ), undef, 'and is allowed once it is loaded' );
 
     write_file( $root, 'bin/tool', "#!/usr/bin/env perl\n1;\n" );
     like( edit( "$root/bin/tool", transcript() ), qr/reading-perl/, 'a script is Perl by its shebang' );
@@ -245,7 +250,7 @@ subtest 'what a commit is judged by' => sub {
     my $why  = run_bash( "cd $docs && git commit -am x", transcript() );
     like( $why, qr/information-security/, 'a commit with no Perl among the changes waits for information-security, for its message' );
     unlike( $why, qr/data-perl/, 'but not for the Perl skills' );
-    is( run_bash( "cd $docs && git commit -am x", transcript( skill( 's1', $PROSE ) ) ), undef, 'and is allowed once it is loaded' );
+    is( run_bash( "cd $docs && git commit -am x", transcript( prose() ) ), undef, 'and is allowed once it is loaded' );
 
     my $clean = repo();
     like( run_bash( "cd $clean && git commit --allow-empty -m x", transcript() ), qr/information-security/, 'and so does one with no changes at all' );
@@ -281,7 +286,7 @@ subtest 'what a commit is judged by' => sub {
 
 subtest 'a post to an issue or a pull request waits for information-security' => sub {
     my $none   = transcript( skill( 's1', $PULL ) );
-    my $loaded = transcript( skill( 's1', $PULL ), skill( 's2', $PROSE ) );
+    my $loaded = transcript( skill( 's1', $PULL ), prose() );
 
     foreach my $command ( 'gh pr create --title x --body y -a @me', 'gh issue comment 12 --body y', 'cd /x && gh pr review 3 --comment -b y', 'gh api repos/o/r/issues/1/comments -f body=y', 'glab mr note 4 -m y' ) {
         like( run_bash( $command, $none ), qr/information-security/, "refused: $command" );
@@ -302,8 +307,8 @@ subtest 'a post to an issue or a pull request waits for information-security' =>
 };
 
 subtest 'a pull request waits for pull-requests' => sub {
-    my $prose = transcript( skill( 's1', $PROSE ) );
-    my $both  = transcript( skill( 's1', $PROSE ), skill( 's2', $PULL ) );
+    my $prose = transcript( prose() );
+    my $both  = transcript( prose(), skill( 's2', $PULL ) );
 
     foreach my $command ( 'gh pr create --title x -a @me', 'gh pr create -R o/r --title x -a @me', 'gh pr create --head me:fix --title x -a @me', "cd /x && gh pr create --body \"\$(cat <<'EOF'\nCloses #1\nEOF\n)\" -a \@me" ) {
         like( run_bash( $command, $prose ), qr/pull-requests/, "refused: $command" );
@@ -314,7 +319,7 @@ subtest 'a pull request waits for pull-requests' => sub {
 };
 
 subtest 'a pull request is assigned to the account that opens it' => sub {
-    my $ready = transcript( skill( 's1', $PROSE ), skill( 's2', $PULL ) );
+    my $ready = transcript( prose(), skill( 's2', $PULL ) );
 
     foreach my $command ( 'gh pr create --title x', 'gh pr create --title "x -a y"', 'gh pr create --title x && echo --assignee @me', "gh pr create --body \"\$(cat <<'EOF'\n-a \@me\nEOF\n)\"" ) {
         like( run_bash( $command, $ready ), qr/--assignee \@me/, "refused: $command" );
@@ -327,7 +332,7 @@ subtest 'a pull request is assigned to the account that opens it' => sub {
 };
 
 subtest 'a pull request is assigned to the account that PERL_SLOP_ASSIGNEE names' => sub {
-    my $ready = transcript( skill( 's1', $PROSE ), skill( 's2', $PULL ) );
+    my $ready = transcript( prose(), skill( 's2', $PULL ) );
     local $ENV{PERL_SLOP_ASSIGNEE} = 'reviewer';
 
     foreach my $command ( 'gh pr create --title x', 'gh pr create -a @me', 'gh pr create --assignee someone-else', 'gh pr create --title "reviewer"', 'gh pr create --title "x -a reviewer"' ) {
@@ -352,7 +357,7 @@ subtest 'a command that signals a process waits for killing-processes' => sub {
     is( run_bash( "cat <<EOF\nkill 1234\nEOF\n", $none ), undef, 'and kill in the body of a heredoc' );
     is( run_bash( q{grep -n "a|kill" x.txt},         $none ), undef, 'and kill after a | inside quotes' );
     like( run_bash( "echo ')' && kill 1", $none ), qr/killing-processes/, 'but not a kill after a quoted bracket' );
-    like( run_bash( 'gh pr create --title x --body y && kill 1', transcript( skill( 's1', $PROSE ) ) ), qr/killing-processes/, 'a post that also kills waits for both' );
+    like( run_bash( 'gh pr create --title x --body y && kill 1', transcript( prose() ) ), qr/killing-processes/, 'a post that also kills waits for both' );
 };
 
 subtest 'a command that copies a tree waits for copying-files' => sub {
@@ -453,7 +458,7 @@ subtest 'a repository can ask for more skills in .perl-slop.json' => sub {
 
     write_file( $root, 'templates/x.tt', "[% x %]\n" );
     like( run_bash( "cd $root && git commit -am x", transcript() ), qr/provisioning-recipes/, 'a template change asks for what the config says, Perl or not' );
-    is( run_bash( "cd $root && git commit -am x", transcript( skill( 's2', 'provisioning-recipes' ), skill( 's3', $PROSE ) ) ), undef, 'and passes once it is loaded' );
+    is( run_bash( "cd $root && git commit -am x", transcript( skill( 's2', 'provisioning-recipes' ), prose() ) ), undef, 'and passes once it is loaded' );
 };
 
 # A session that starts in another repository has no Skill tool entry for the
@@ -481,7 +486,7 @@ subtest 'a refusal for a skill that the repository keeps asks the user for /add-
     like( edit( "$root/lib/Recipe/Foo.pm", transcript( reading(), $read ) ), qr/writing-recipes/, 'and a Read of the file is not a load' );
 
     write_file( $root, 'templates/x.tt', "[% x %]\n" );
-    my $commit = run_bash( "cd $root && git commit -am x", transcript( skill( 's3', $PROSE ) ) );
+    my $commit = run_bash( "cd $root && git commit -am x", transcript( prose() ) );
     like( $commit, qr{does[ ]not[ ]know[ ]provisioning-recipes,[ ]ask}, 'a commit names it too' );
     unlike( $commit, qr/know[^.]*not-kept-here/, 'but not for a skill that the repository does not keep' );
 };
@@ -504,7 +509,7 @@ subtest 'a refusal for a skill of another plugin asks the user to install it' =>
     write_file( $root, '.perl-slop.json', $config_commit );
     git( $root, 'commit', '-q', '-am', 'commit gate' );
     write_file( $root, 'README.md', "z\n" );
-    like( run_bash( "cd $root && git commit -am x", transcript( skill( 's3', $PROSE ) ) ), qr{the[ ]plugin[ ]simple-english[ ]is[ ]not[ ]enabled}, 'a commit names it too' );
+    like( run_bash( "cd $root && git commit -am x", transcript( prose() ) ), qr{the[ ]plugin[ ]simple-english[ ]is[ ]not[ ]enabled}, 'a commit names it too' );
 };
 
 subtest 'a prompt gets reminders of information-security, and of profiling-perl when it is about speed' => sub {
@@ -515,25 +520,25 @@ subtest 'a prompt gets reminders of information-security, and of profiling-perl 
         return $out && $out->{hookSpecificOutput}{additionalContext};
     };
 
-    my $prose = transcript( skill( 's0', $PROSE ) );
+    my $prose = transcript( prose() );
     like( $ask->( 'rename this sub', transcript() ), qr/information-security/, 'information-security for any prompt' );
     ok( !$ask->( 'rename this sub', $prose ), 'until it is loaded' );
 
     like( $ask->( 'why is this so slow?', $prose ), qr/profiling-perl/, 'profiling-perl for a slow thing' );
-    ok( !$ask->( 'why is this so slow?', transcript( skill( 's0', $PROSE ), skill( 's1', 'perl-slop:profiling-perl' ) ) ), 'not when the skill is loaded' );
+    ok( !$ask->( 'why is this so slow?', transcript( prose(), skill( 's1', 'perl-slop:profiling-perl' ) ) ), 'not when the skill is loaded' );
     my $both = $ask->( 'why is this so slow?', transcript() );
     like( $both, qr/information-security.*profiling-perl/s, 'and both at once when neither is loaded' );
 
     foreach my $prompt ( 'is this fixed upstream?', 'ought we make a PR on lexicon?', 'send a pull request to their repo' ) {
         like( $ask->( $prompt, $prose ), qr/pull-requests/, "pull-requests for: $prompt" );
     }
-    ok( !$ask->( 'is this fixed upstream?', transcript( skill( 's0', $PROSE ), skill( 's1', 'perl-slop:pull-requests' ) ) ), 'not when the skill is loaded' );
+    ok( !$ask->( 'is this fixed upstream?', transcript( prose(), skill( 's1', 'perl-slop:pull-requests' ) ) ), 'not when the skill is loaded' );
     ok( !$ask->( 'open each PR against master', $prose ), 'nor for a pull request in this repository' );
 
     foreach my $prompt ( 'Run it thru the perl debugger', 'It did indeed build it, the bug is real', 'that should have refused the domain', 'how did it get past the check?', "I'm stumped" ) {
         like( $ask->( $prompt, $prose ), qr/debugging-perl/, "debugging-perl for: $prompt" );
     }
-    ok( !$ask->( 'Run it thru the perl debugger', transcript( skill( 's0', $PROSE ), skill( 's1', 'perl-slop:debugging-perl' ) ) ), 'not when the skill is loaded' );
+    ok( !$ask->( 'Run it thru the perl debugger', transcript( prose(), skill( 's1', 'perl-slop:debugging-perl' ) ) ), 'not when the skill is loaded' );
     ok( !$ask->( 'rename the sub that builds it', $prose ), 'nor for a prompt about something else' );
     ok( !$ask->( 'make a PR to main',           $prose ), 'nor for one to the main branch' );
 };
@@ -588,7 +593,7 @@ subtest 'the hook as Claude Code runs it' => sub {
     is_deeply( [ $exit, $out ], [ 0, q{} ], 'input it cannot read allows, rather than stopping work' );
 
     my $data = tempdir( CLEANUP => 1 );
-    ( $exit, $out ) = $run->( $JSON->encode( { hook_event_name => 'PostToolUse', tool_name => 'Skill', tool_input => { skill => $PROSE }, session_id => 'sess-run' } ), CLAUDE_PLUGIN_DATA => $data );
+    ( $exit, $out ) = $run->( $JSON->encode( { hook_event_name => 'PostToolUse', tool_name => 'Skill', tool_input => { skill => $PROSE[0] }, session_id => 'sess-run' } ), CLAUDE_PLUGIN_DATA => $data );
     is_deeply( [ $exit, $out ], [ 0, q{} ], 'a PostToolUse on Skill prints nothing' );
     ok( -s "$data/loads-sess-run.jsonl", 'and records the load where CLAUDE_PLUGIN_DATA says' );
 };
@@ -607,7 +612,7 @@ SH
     git( $root, 'add', '-A' );
     git( $root, 'commit', '-q', '-m', 'config' );
 
-    my $ready = transcript( skill( 's1', $PROSE ), skill( 's2', $PULL ) );
+    my $ready = transcript( prose(), skill( 's2', $PULL ) );
     my $post  = sub { my ($command) = @_; return run_bash( $command, $ready, cwd => $root ) };
 
     like( $post->('gh issue comment 1 --body "it was bogushost"'), qr/line 6: a name of the fleet/, 'a body that names the fleet is refused, with what the check said' );

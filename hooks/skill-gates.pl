@@ -62,7 +62,7 @@ our $PLUGIN = 'perl-slop';
 our %BASE = (
     edit     => ['perl-slop:reading-perl'],
     commit   => [ 'perl-slop:data-perl', 'perl-slop:testing-perl', 'perl-slop:reviewing-perl' ],
-    prose    => ['perl-slop:information-security'],
+    prose    => [ 'perl-slop:information-security', 'perl-slop:situational-awareness' ],
     signal   => ['perl-slop:killing-processes'],
     copy     => ['perl-slop:copying-files'],
     pr       => ['perl-slop:pull-requests'],
@@ -498,8 +498,8 @@ sub strings_in {
 
 =head2 $output = edit_gate(\%input, \@files)
 
-Refuses an edit to any of C<@files> until C<perl-slop:information-security>
-is loaded, for a file in any language, and C<perl-slop:reading-perl> too, for
+Refuses an edit to any of C<@files> until C<perl-slop:information-security> and
+C<perl-slop:situational-awareness> are loaded, for a file in any language, and C<perl-slop:reading-perl> too, for
 a Perl file, and until the skills that F<.perl-slop.json> names under
 C<before_edit> for its path are loaded.  Each item of C<@files> is a path and,
 for a Write, the content that it writes.
@@ -534,8 +534,8 @@ sub edit_gate {
 
 Refuses a commit in the checkout at C<$dir> until the skills it needs are
 loaded after the commit at its C<HEAD>.  Those are
-C<perl-slop:information-security> for any commit, because every commit has a
-message, the three finishing skills when any changed file is Perl, and the
+C<perl-slop:information-security> and C<perl-slop:situational-awareness> for
+any commit, because every commit has a message, the three finishing skills when any changed file is Perl, and the
 skills that F<.perl-slop.json> names under C<before_commit> for each changed
 path.
 
@@ -614,7 +614,8 @@ sub add_dir_advice {
 =head2 $output = publish_gate(\%input)
 
 Refuses a post to an issue, a pull request, a review, a release or a gist
-until C<perl-slop:information-security> is loaded.
+until C<perl-slop:information-security> and C<perl-slop:situational-awareness>
+are loaded.
 
 =cut
 
@@ -861,8 +862,8 @@ sub load_gate {
 
 =head2 $output = prompt_reminder(\%input)
 
-Adds a reminder of C<perl-slop:information-security> to every prompt until
-it is loaded, because a reply to the user is prose too.  Adds a reminder of
+Adds a reminder of C<perl-slop:information-security> and
+C<perl-slop:situational-awareness> to every prompt until they are loaded, because a reply to the user is prose too.  Adds a reminder of
 C<perl-slop:pull-requests> to a prompt that names upstream, or a pull request
 to something other than master or main, when that skill is not loaded.  Adds a reminder of
 C<perl-slop:profiling-perl> to a prompt about speed, in a Perl project, when
