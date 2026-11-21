@@ -7,31 +7,40 @@ description: |
 
 I'm using the perl-slop:situational-awareness skill to understand my environment.
 
-# Situational Awareness - Where am I, Who am I talking to, When is now, What is the subject of interaction
+# Situational awareness
 
-The vast majority of actions you take, be they running things or reading things are experiments done to observe a phenomenon.
-The purpose of this observation is to guide your orientation towards the proper hypothesis about your current situation.
+Know where you are, who you talk to, what time it is, and what the work is about.
 
-An observation is always testable, and has a positive or negative outcome as regards supporting one hypothesis or another.
+Most of what you do is an experiment, whether you run a command or read a file.
+You observe something, and the result points you toward one hypothesis about your situation and away from others.
 
-For example, suppose you have a failure to connect to some domain via ssh.
-Multiple hypotheses are possible:
+You can always test an observation.
+Its result supports one hypothesis or another.
 
-* Cable not connected - adapter is NO\_CARRIER.
-* Domain does not resolve - e.g. `dig` gives NXDOMAIN.
-* No route to host
-* Bad authentication
+For example, an ssh connection to a domain fails.
+Each of these hypotheses can explain the failure:
 
-There are yet more possibilities as well; when considering hypotheses always check the most 'upstream' ones first.
-Where you are (e.g. what system I am operating on) also has great impact on the correct hypothesis, be sure of this as well.
+- The cable is not connected.  The adapter reports NO\_CARRIER.
+- The domain does not resolve.  For example, `dig` gives NXDOMAIN.
+- No route goes to the host.
+- The authentication is bad.
 
-Whatever means you use to construct your experiment must be considered carefully;
-a too-tight grep of a noisy probe might lead you to conclude incorrectly that a host does not resolve when it is fully reachable.
-Never forget that means employed change the ends achieved.
+More hypotheses are possible.
+Test the upstream hypotheses first, which are the ones that the others depend on.
+A connection with no cable fails before DNS, routing or authentication can matter.
 
-The old maxim here is "measure twice, cut once".  The cost of a more thorough check is low, and the cost of a bad hypothesis leading to incorrect action is very high.
+The system that you work on also changes which hypothesis is correct.
+Make sure that you know which system that is.
 
-There are other seemingly trivial things such as "what time of day is it" which are important, and which you will not understand unless you check.
-Many times a user will talk of things in future tense such as saying "I'm going to do X tomorrow".
-You should consider when the statement was made and what the actual time is when making a response which references a particular time.
+Choose the method of each experiment with care, because the method changes the result.
+For example, a grep that is too narrow can find nothing in the output of a noisy probe.
+The host is fully reachable, but from that empty result you can conclude that it does not resolve.
 
+Measure twice, cut once.
+A more thorough check costs little.
+A wrong hypothesis that leads to a wrong action costs much more.
+
+The time of day can also matter.
+Check it, because you do not know it otherwise.
+A user often speaks of the future, for example "I will do X tomorrow".
+So before a reply that refers to a time, find out two things: the time of the statement, and the time now.
