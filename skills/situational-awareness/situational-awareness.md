@@ -2,7 +2,7 @@
 name: situational-awareness
 trigger: All actions
 description: |
-    Be able to make responses to users that considers the context you operate in.
+    Before you state a conclusion about the environment, test it with an observation that can prove it wrong.
 ---
 
 I'm using the perl-slop:situational-awareness skill to understand my environment.
