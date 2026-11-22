@@ -127,6 +127,21 @@ subtest 'everything else in the pair is the same set' => sub {
       or diag( 'unexplained in the compat profile: ' . join( ', ', @unexplained ) );
 };
 
+subtest 'an @example of a blurb is no commented-out code' => sub {
+    foreach my $pair ( [ modern => $modern ], [ compat => $compat ] ) {
+        my ( $which, $text ) = @$pair;
+        my ($pattern) = $text =~ m/^\[Bangs::ProhibitCommentedOutCode\]\ncommentedcoderegex\s*=\s*(\S+)$/m;
+        ok( defined $pattern, "$which sets the pattern of ProhibitCommentedOutCode" ) or next;
+
+        # The policy matches the comment against the string as it is, with no flags of this file.
+        my $is_code = sub { return $_[0] =~ m/(?^:$pattern)/ ? 1 : 0 };
+        is( $is_code->('# @example my $four = double(2);'), 0, "$which takes an \@example line for an example" );
+        is( $is_code->('#   @example   my $x = 1;'),       0, "however it is spaced" );
+        is( $is_code->('# my $old = 5;'),                     1, "and still takes an assignment in a comment for code" );
+        is( $is_code->('# @param $width Int in pixels'),     0, "and a tag without an assignment for none" );
+    }
+};
+
 subtest 'the hook judges what it tidied, with the profile that was copied' => sub {
     my $hook = slurp("$TEMPLATES/pre-commit");
 
