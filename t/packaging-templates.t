@@ -139,6 +139,9 @@ subtest 'an @example of a blurb is no commented-out code' => sub {
         is( $is_code->('#   @example   my $x = 1;'),       0, "however it is spaced" );
         is( $is_code->('# my $old = 5;'),                     1, "and still takes an assignment in a comment for code" );
         is( $is_code->('# @param $width Int in pixels'),     0, "and a tag without an assignment for none" );
+
+        # The default pattern sees only an assignment that names a scalar, and so does this one.
+        is( $is_code->('# @example = qw{foo bar baz};'), 0, "and an assignment to an array named example for none, as the default pattern does" );
     }
 };
 
