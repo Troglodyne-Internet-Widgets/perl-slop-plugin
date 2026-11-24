@@ -58,7 +58,9 @@ policies that it enables with the template profile that the case calls for, in
 C<%CASE>.  That is the profile for the floor, copied whole.
 
 =item * The F<META.json> that C<dzil build> writes names the distribution, and
-requires the perl that the case calls for.
+requires the perl that the case calls for.  The build has no F<CLAUDE.md>,
+F<git-hooks/>, F<dist.ini> or dotfile, which F<MANIFEST.SKIP> and
+C<[GatherDir]> keep out.
 
 =item * The build writes the POD of a sub from the blurb above it, which the
 C<[Blurbs]> section of F<weaver.ini> does.  The checks add the module with that
@@ -263,6 +265,12 @@ PERL
     ok( $meta, "$label: dzil build writes META.json" ) or diag( substr( $build, -2000 ) );
     is( $meta && $meta->{name},                             $wants->{name}, "$label: which names the distribution" );
     is( $meta && $meta->{prereqs}{runtime}{requires}{perl}, $wants->{perl}, "$label: and requires the perl the case asks for" );    ## no critic (Variables::RequireNoAutovivification) -- core-only, and nothing reads the decoded copy again
+  SKIP: {
+        skip "$label: no build to look in", 2 unless $meta;
+        my @shipped = grep { -e "$built/$_" } qw{CLAUDE.md git-hooks dist.ini weaver.ini prereqs.yml MANIFEST.SKIP .claude .perlcriticrc};
+        is_deeply( \@shipped, [], "$label: and leaves the files for development out of the build" );
+        ok( -e "$built/Makefile.PL" && -d "$built/lib", "$label: while it keeps Makefile.PL and lib/" );
+    }
     remove_tree($built);
 
     # The template's profile is read as the distribution's is, beside the files
@@ -284,7 +292,7 @@ PERL
 
     # The prefixes are the ones that Pod::Weaver::Config::Assembler expands.
     my %prefix   = ( q{@} => 'Pod::Weaver::PluginBundle::', q{-} => 'Pod::Weaver::Plugin::', q{} => 'Pod::Weaver::Section::' );
-    my @sections = map { m/\A\[\s*([@-]?)(\w+(?:::\w+)*)/ ? "$prefix{$1}$2" : () } split /\n/, slurp("$dist/weaver.ini");
+    my @sections = map  { m/\A\[\s*([@-]?)(\w+(?:::\w+)*)/ ? "$prefix{$1}$2" : () } split /\n/, slurp("$dist/weaver.ini");
     my @unlisted = grep { !$WEAVER_OWN{$_} && !$authordep{$_} } @sections;
     ok( scalar @sections, "$label: weaver.ini names sections" );
     is_deeply( \@unlisted, [], "$label: and dzil authordeps names every one that Pod::Weaver lacks" );
@@ -362,10 +370,10 @@ plan skip_all => q{claude is not on the PATH} unless on_path(q{claude});
 
 my $output = sub {
     my (@cmd) = @_;
-    open( my $fh, '-|', @cmd ) or die "@cmd: $!";    ## no critic (ProhibitPipeOpen) -- core-only, and what the command printed is the point
+    open( my $fh, '-|', @cmd ) or die "@cmd: $!";                            ## no critic (ProhibitPipeOpen) -- core-only, and what the command printed is the point
     local $/ = undef;
     my $text = <$fh>;
-    close($fh);                                      ## no critic (InputOutput::RequireCheckedSyscalls) -- false for any nonzero exit, which this returns
+    close($fh);                                                              ## no critic (InputOutput::RequireCheckedSyscalls) -- false for any nonzero exit, which this returns
     return ( $text // q{}, $? >> 8 );
 };
 
@@ -430,7 +438,7 @@ foreach my $dir ( sort keys %EVAL_PLUGIN ) {
 my $RUN_TMP = ( $ENV{XDG_CACHE_HOME} || "$ENV{HOME}/.cache" ) . '/pse';
 mkdir( dirname($RUN_TMP) );
 mkdir($RUN_TMP);
-ok( -d $RUN_TMP, "the runs are made under $RUN_TMP" );
+ok( -d $RUN_TMP,            "the runs are made under $RUN_TMP" );
 ok( length($RUN_TMP) <= 49, "$RUN_TMP is short enough for the bridge sockets of the sandbox of a run" ) or do {
     diag('Set XDG_CACHE_HOME to a shorter directory outside /tmp, then run this again.');
     done_testing();

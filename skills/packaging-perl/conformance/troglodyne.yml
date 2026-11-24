@@ -33,6 +33,7 @@ checks:
       weaver.ini: templates/weaver.ini
       Changes: templates/Changes
       prereqs.yml: templates/prereqs.yml
+      MANIFEST.SKIP: templates/MANIFEST.SKIP
       LICENSE: templates/LICENSE
       .gitignore: templates/gitignore
       .mailmap: templates/mailmap

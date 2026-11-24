@@ -32,6 +32,7 @@ use Test::More;
 use File::Temp qw{tempdir};
 use FindBin;
 use List::Util qw{any};
+use ExtUtils::Manifest ();
 
 my $SKILL     = "$FindBin::Bin/../skills/packaging-perl";
 my $TEMPLATES = "$SKILL/templates";
@@ -136,9 +137,9 @@ subtest 'an @example of a blurb is no commented-out code' => sub {
         # The policy matches the comment against the string as it is, with no flags of this file.
         my $is_code = sub { return $_[0] =~ m/(?^:$pattern)/ ? 1 : 0 };
         is( $is_code->('# @example my $four = double(2);'), 0, "$which takes an \@example line for an example" );
-        is( $is_code->('#   @example   my $x = 1;'),       0, "however it is spaced" );
-        is( $is_code->('# my $old = 5;'),                     1, "and still takes an assignment in a comment for code" );
-        is( $is_code->('# @param $width Int in pixels'),     0, "and a tag without an assignment for none" );
+        is( $is_code->('#   @example   my $x = 1;'),        0, "however it is spaced" );
+        is( $is_code->('# my $old = 5;'),                   1, "and still takes an assignment in a comment for code" );
+        is( $is_code->('# @param $width Int in pixels'),    0, "and a tag without an assignment for none" );
 
         # The default pattern sees only an assignment that names a scalar, and so does this one.
         is( $is_code->('# @example = qw{foo bar baz};'), 0, "and an assignment to an array named example for none, as the default pattern does" );
@@ -618,6 +619,37 @@ subtest 'the gitignore hides the build of the distribution and not its tests' =>
     ok( $ignored->('Foo-Bar-0.001/Makefile.PL'),  'and the directory it builds in' );
     ok( !$ignored->('t/Foo-Bar-Baz.t'),           'but not a test named after the distribution' );
     ok( !$ignored->('lib/Foo/Foo-Bar-notes.pod'), 'nor any other file whose name starts with it' );
+};
+
+subtest 'the MANIFEST.SKIP keeps the files for development out of the tarball' => sub {
+    my $skipped = ExtUtils::Manifest::maniskip("$TEMPLATES/MANIFEST.SKIP");
+
+    foreach my $path (
+        qw{
+        CLAUDE.md git-hooks/pre-commit git-hooks/refresh-coverage
+        dist.ini weaver.ini prereqs.yml prereqs.json metamerge.yml metamerge.json
+        cover_db/runs/1.json MANIFEST.SKIP
+        }
+    ) {
+        ok( $skipped->($path), "it skips $path" );
+    }
+
+    # Anchored at the root, so a file of the same name further down ships.
+    foreach my $path (
+        qw{
+        lib/Foo/Bar.pm t/basic.t t/author-critic.t xt/author/pod.t bin/tool share/dist.ini
+        Changes LICENSE README README.md INSTALL MANIFEST META.json META.yml Makefile.PL
+        lib/Foo/CLAUDE.md t/git-hooks/pre-commit.t t/data/prereqs.yml
+        }
+    ) {
+        ok( !$skipped->($path), "it keeps $path" );
+    }
+
+    # MANIFEST.SKIP is the one place that says what stays out, so GatherDir
+    # excludes only the LICENSE that [License] writes.
+    my ($gather) = slurp("$TEMPLATES/dist.ini") =~ m/^\[GatherDir\]\n(.*?)^\[/ms;
+    is_deeply( [ $gather =~ m/^(exclude_\w+\s*=\s*\S+)/mg ], ['exclude_filename = LICENSE'], 'and [GatherDir] excludes only LICENSE' );
+    like( slurp("$TEMPLATES/dist.ini"), qr/^\[ManifestSkip\]$/m, 'while dist.ini reads the MANIFEST.SKIP' );
 };
 
 # The release tests of [@TestingMania] load modules that its plugins declare
