@@ -136,9 +136,11 @@ installs them into `.git/hooks`. If no variable fills a placeholder of a
 template, `update` does not write that file, and it says which variable to add.
 `check` must report a pass for each check.
 
-`update` never overwrites a file that exists, except `.perlcriticrc`, as the
-next paragraph says. So you can run it again in a clone, which then gets the
-hooks that git does not install for it. You can also run it in an older
+`update` never overwrites a file that exists, with two exceptions.
+`.perlcriticrc` is one, as the next paragraph says. `metamerge.yml` is the
+other: if it does not declare the packages of its template, `update` adds
+them, as the section on that file says. So you can run `update` again in a
+clone, which then gets the hooks that git does not install for it. You can also run it in an older
 distribution, which then gets the files that it lacks. So the procedure is the
 same for a new distribution and an old one. Run `update`, then `check`, and do
 what each one says until `check` passes. `check` reports `info` for a hook that
@@ -356,16 +358,30 @@ there. To keep another file out, add a line here, not to `[GatherDir]`.
 **`.mailmap`** is for `[Git::Contributors]`, which otherwise lists the same
 person once per address they have ever committed from.
 
-**`metamerge.yml`** is not in the scaffold, because most distributions do not
-need it. A distribution that needs packages of the operating system, such as
-`ffmpeg`, declares them in this file. CPAN has no field for such a package, so
-this file is the only place that the requirement is written. `[MetaMergeFile]`
-merges the file into `META.json`, so the declaration also goes to CPAN. A tool
-that sets up a host reads the declaration, and installs the packages before it
-installs the distribution:
+**`metamerge.yml`** declares the packages of the operating system that the
+distribution needs. CPAN has no field for such a package, so this file is the
+only place that the requirement is written. `[MetaMergeFile]` merges the file
+into `META.json`, so the declaration also goes to CPAN. A tool that sets up a
+host reads the declaration, and installs the packages before it installs the
+distribution.
+
+Every distribution needs `aspell` and its English dictionary, `aspell-en`.
+`Documentation::PodSpelling` runs aspell over the POD. If aspell is not
+installed, the policy turns itself off, and nothing checks the spelling. So the
+template declares both, and the check `SystemPackages` of the flavor fails a
+distribution that does not declare each one. If `metamerge.yml` does not exist,
+`update` writes the template. If it exists and lacks a package of the template,
+`update` adds that package, keeps the other keys, and writes the file again.
+That write removes the comments of the file. If the distribution declares
+`aspell` already, `update` keeps its entry.
+
+A distribution that needs more packages, such as `ffmpeg`, adds them to the
+file:
 
 ```yaml
 x_system_packages:
+  aspell: { deb: aspell, rpm: aspell, test: aspell --version }
+  aspell-en: { deb: aspell-en, rpm: aspell-en, test: aspell --lang=en_US -a }
   FooLib:
     deb:
       name: libfoo-devel

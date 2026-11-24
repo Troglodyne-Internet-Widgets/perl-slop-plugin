@@ -24,12 +24,14 @@ It skips where Dist::Conformance is not installed.
 use Test::More;
 use File::Temp qw{tempdir};
 use FindBin;
-use File::Glob ();
+use File::Glob    ();
+use Capture::Tiny ();
 
 BEGIN {
     eval { require Dist::Conformance;                        1 } or plan skip_all => 'Dist::Conformance is not installed';
     eval { require Dist::Conformance::Check::SystemPackages; 1 } or plan skip_all => 'Dist::Conformance is too old to have the check SystemPackages, which the flavors run';
     eval { require Dist::Conformance::Check::RefusedIniKeys; 1 } or plan skip_all => 'Dist::Conformance is too old to have the check RefusedIniKeys, which the flavors run';
+    Dist::Conformance::Check::SystemPackages->config_schema->{properties}{template} or plan skip_all => 'Dist::Conformance is too old for the template of SystemPackages, which the flavors give';
 }
 
 my $ROOT      = "$FindBin::Bin/..";
@@ -66,6 +68,7 @@ my %WRITES = (
     'CLAUDE.md'             => 'CLAUDE.md',
     'perl-slop.json'        => '.perl-slop.json',
     'claude-settings.json'  => '.claude/settings.json',
+    'metamerge.yml'         => 'metamerge.yml',
 );
 
 my %FLAVOR = (
@@ -259,7 +262,8 @@ subtest 'the profile requires #!perl, unless the repository overrides it' => sub
     my $repo = repository( 'troglodyne-5.040', %VARIABLES );
     spew( "$repo/.conformance.yml", slurp("$repo/.conformance.yml") . "checks:\n  CriticProfile:\n    overrides:\n      logicLAB::RequireSheBang:\n        formats: '#!/usr/bin/env perl'\n" );
     conformance($repo)->update;
-    like( slurp("$repo/.perlcriticrc"), qr/^\[logicLAB::RequireSheBang\]\nformats[ ]=[ ]\#!\/usr\/bin\/env[ ]perl\n/m, 'and one that overrides its formats accepts env perl' );
+    my $env_perl = qr{\#!/usr/bin/env[ ]perl};
+    like( slurp("$repo/.perlcriticrc"), qr/^\[logicLAB::RequireSheBang\]\nformats[ ]=[ ]$env_perl\n/m, 'and one that overrides its formats accepts env perl' );
     my @failed = grep { $_->{status} ne 'pass' } @{ conformance($repo)->check };
     is_deeply( \@failed, [], 'and passes' ) or diag( explain \@failed );
 };
@@ -292,6 +296,7 @@ subtest 'the scaffold gates its prose, and can install what the gates ask for' =
 
 # CPAN has no field for a package of the operating system, so a distribution
 # declares them in metamerge.yml, and the flavor checks the declaration.
+my $ASPELL = "  aspell: { deb: aspell }\n  aspell-en: { deb: aspell-en }\n";
 subtest 'metamerge.yml declares system packages that a packager can install' => sub {
     my $repo   = repository( 'troglodyne-5.040', %VARIABLES );
     my $status = sub {
@@ -302,14 +307,56 @@ subtest 'metamerge.yml declares system packages that a packager can install' => 
         return $result->{status};
     };
 
-    is( $status->(undef),                                                                                                                                                                                                                                                                                            'pass', 'a distribution that declares nothing passes' );
-    is( $status->("x_system_packages:\n  ffmpeg:\n    deb: ffmpeg\n    test: ffmpeg -version\n"),                                                                                                                                                                                                                    'pass', 'and so does one that declares a dependency and its test' );
-    is( $status->("x_system_packages:\n  Ssl:\n    deb: { name: libssl3, ubuntu/24.04: libssl3t64, debian/13: ~ }\n"),                                                                                                                                                                                               'pass', 'and one that names a package for a release, or none' );
-    is( $status->("x_system_packages:\n  ffmpeg:\n    deb: { name: ffmpeg, source: jellyfin }\nx_system_sources:\n  deb:\n    - { name: jellyfin, uri: 'https://repo.test.test', suites: [stable], components: [main], key: 'https://repo.test.test/k', fingerprint: 0123456789ABCDEF0123456789ABCDEF01234567 }\n"), 'pass', 'and one whose package comes from an archive' );
-    is( $status->("x_system_packages:\n  ffmpeg:\n    deb: { name: ffmpeg, source: jellyfin }\nx_system_sources:\n  deb:\n    - { name: jellyfin, uri: 'https://repo.test.test', suites: [stable], components: [main], key: 'https://repo.test.test/k' }\n"),                                                        'fail', 'a source without the fingerprint of its key fails' );
-    is( $status->("x_system_packages:\n  ffmpeg:\n    deb: { name: ffmpeg, source: jellyfin }\n"),                                                                                                                                                                                                                   'fail', 'and so does a source that is not declared' );
-    is( $status->("x_system_packages:\n  ffmpeg: { deb: ffmpeg- }\n"),                                                                                                                                                                                                                                               'fail', 'a deb name that apt reads as a removal fails' );
-    is( $status->("x_system_packages:\n  ffmpeg: { Deb: ffmpeg }\n"),                                                                                                                                                                                                                                                'fail', 'and so does a key that is not the name of a packager' );
+    is( $status->(undef),                                                                                                                                                                                                                                                                                                   'fail', 'a distribution that declares nothing fails, because it needs aspell' );
+    is( $status->("x_system_packages:\n  aspell: { deb: aspell }\n"),                                                                                                                                                                                                                                                       'fail', 'and so does one that declares aspell without its dictionary' );
+    is( $status->("x_system_packages:\n$ASPELL"),                                                                                                                                                                                                                                                                           'pass', 'one that declares aspell and its dictionary passes' );
+    is( $status->("x_system_packages:\n$ASPELL  ffmpeg:\n    deb: ffmpeg\n    test: ffmpeg -version\n"),                                                                                                                                                                                                                    'pass', 'and so does one that declares a dependency and its test too' );
+    is( $status->("x_system_packages:\n$ASPELL  Ssl:\n    deb: { name: libssl3, ubuntu/24.04: libssl3t64, debian/13: ~ }\n"),                                                                                                                                                                                               'pass', 'and one that names a package for a release, or none' );
+    is( $status->("x_system_packages:\n$ASPELL  ffmpeg:\n    deb: { name: ffmpeg, source: jellyfin }\nx_system_sources:\n  deb:\n    - { name: jellyfin, uri: 'https://repo.test.test', suites: [stable], components: [main], key: 'https://repo.test.test/k', fingerprint: 0123456789ABCDEF0123456789ABCDEF01234567 }\n"), 'pass', 'and one whose package comes from an archive' );
+    is( $status->("x_system_packages:\n$ASPELL  ffmpeg:\n    deb: { name: ffmpeg, source: jellyfin }\nx_system_sources:\n  deb:\n    - { name: jellyfin, uri: 'https://repo.test.test', suites: [stable], components: [main], key: 'https://repo.test.test/k' }\n"),                                                        'fail', 'a source without the fingerprint of its key fails' );
+    is( $status->("x_system_packages:\n$ASPELL  ffmpeg:\n    deb: { name: ffmpeg, source: jellyfin }\n"),                                                                                                                                                                                                                   'fail', 'and so does a source that is not declared' );
+    is( $status->("x_system_packages:\n$ASPELL  ffmpeg: { deb: ffmpeg- }\n"),                                                                                                                                                                                                                                               'fail', 'a deb name that apt reads as a removal fails' );
+    is( $status->("x_system_packages:\n$ASPELL  ffmpeg: { Deb: ffmpeg }\n"),                                                                                                                                                                                                                                                'fail', 'and so does a key that is not the name of a packager' );
+};
+
+# Documentation::PodSpelling turns itself off where aspell is not installed,
+# so every distribution declares it, and an older one gets it from an update.
+subtest 'an update adds aspell to a metamerge.yml without it, and keeps what it declares' => sub {
+    my $repo = repository( 'troglodyne-compat', %VARIABLES );
+    spew( "$repo/metamerge.yml", "x_system_packages:\n  aspell: { deb: aspell, rpm: my-aspell }\n  ffmpeg: { deb: ffmpeg }\n" );
+    conformance($repo)->update;
+
+    my $declared = Dist::Conformance::Check::SystemPackages->declared($repo);
+    is_deeply( $declared->{packages}{'aspell-en'}, { deb => 'aspell-en', rpm => 'aspell-en', test => 'aspell --lang=en_US -a' }, 'the dictionary of aspell is added' );
+    is_deeply( $declared->{packages}{aspell},      { deb => 'aspell', rpm => 'my-aspell' },                                      'the entry that the distribution has for aspell is its own' );
+    is_deeply( $declared->{packages}{ffmpeg},      { deb => 'ffmpeg' },                                                          'and its other packages stay' );
+    my ($result) = grep { $_->{check} eq 'SystemPackages' } @{ conformance($repo)->check };
+    is( $result->{status}, 'pass', 'and the check passes it' ) or diag( explain $result );
+};
+
+# The template is what every scaffold and every update declares, so it has to
+# resolve on each packager that a host of a distribution can have.
+subtest 'the template gives aspell and its dictionary on each packager' => sub {
+    my $declared = Dist::Conformance::Check::SystemPackages->declared($TEMPLATES);
+    foreach my $host ( [ deb => ubuntu => '24.04' ], [ deb => debian => '13' ], [ rpm => fedora => '43' ], [ rpm => rhel => '9' ] ) {
+        my ( $packager, $distro, $release ) = @$host;
+        my $resolved = Dist::Conformance::Check::SystemPackages->resolve( $declared, packager => $packager, distro => $distro, release => $release );
+        is_deeply( $resolved->{unresolved}, [],                     "$distro/$release resolves every dependency" );
+        is_deeply( $resolved->{packages},   [qw{aspell aspell-en}], "and installs aspell and aspell-en" );
+    }
+
+    my ($aspell) = grep { -x "$_/aspell" } split m/:/, $ENV{PATH} // q{};    ## no critic (ValuesAndExpressions::ProhibitFiletest_rwxRWX) -- the execute bit is what the shell looks for on the PATH
+  SKIP: {
+        skip 'aspell is not installed here, so its tests cannot run', 2 if !$aspell;
+        my $resolved = Dist::Conformance::Check::SystemPackages->resolve( $declared, packager => 'deb' );
+
+        # aspell -a reads standard input to its end, and an installer runs a test with no input.
+        open( STDIN, '<', '/dev/null' ) or die "/dev/null: $!";
+        foreach my $test ( @{ $resolved->{programs} } ) {
+            my ( $said, $status ) = Capture::Tiny::capture_merged( sub { system( split m/\ /, $test ) } );    ## no critic (logicLAB::ProhibitShellDispatch) -- the test of a package is a program, and running it is what this asks
+            is( $status, 0, "the test '$test' passes where aspell is installed" ) or diag($said);
+        }
+    }
 };
 
 subtest 'a placeholder that nothing fills stops its file, and says which' => sub {
@@ -321,7 +368,7 @@ subtest 'a placeholder that nothing fills stops its file, and says which' => sub
     ok( !-e "$repo/dist.ini", 'dist.ini is not written with {{CPAN_ID}} in it' );
     ok( -e "$repo/Changes",   'while the files that do not need it are' );
     my @manual = map { @{ $_->{manual} } } @$plan;
-    is( scalar( grep { /CPAN_ID/ } @manual ), 1, 'and the update names the variable' ) or diag( explain \@manual );
+    is( scalar( grep { index( $_, 'CPAN_ID' ) >= 0 } @manual ), 1, 'and the update names the variable' ) or diag( explain \@manual );
 };
 
 done_testing();
