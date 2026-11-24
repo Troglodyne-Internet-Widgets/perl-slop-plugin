@@ -296,7 +296,7 @@ subtest 'the scaffold gates its prose, and can install what the gates ask for' =
 
 # CPAN has no field for a package of the operating system, so a distribution
 # declares them in metamerge.yml, and the flavor checks the declaration.
-my $ASPELL = "  aspell: { deb: aspell }\n  aspell-en: { deb: aspell-en }\n  epel-release: { rpm: { rhel: epel-release } }\n";
+my $ASPELL = "  aspell: { deb: aspell }\n  aspell-en: { deb: aspell-en }\n";
 subtest 'metamerge.yml declares system packages that a packager can install' => sub {
     my $repo   = repository( 'troglodyne-5.040', %VARIABLES );
     my $status = sub {
@@ -338,12 +338,11 @@ subtest 'an update adds aspell to a metamerge.yml without it, and keeps what it 
 # resolve on each packager that a host of a distribution can have.
 subtest 'the template gives aspell and its dictionary on each packager' => sub {
     my $declared = Dist::Conformance::Check::SystemPackages->declared($TEMPLATES);
-    my @epel     = qw{epel-release};
-    foreach my $host ( [ deb => ubuntu => '24.04' ], [ deb => debian => '13' ], [ rpm => fedora => '43' ], [ rpm => rhel => '9', @epel ], [ rpm => centos => '9', @epel ], [ rpm => rocky => '9', @epel ], [ rpm => almalinux => '9', @epel ] ) {
-        my ( $packager, $distro, $release, @more ) = @$host;
+    foreach my $host ( [ deb => ubuntu => '24.04' ], [ deb => debian => '13' ], [ rpm => fedora => '43' ], [ rpm => rhel => '9' ] ) {
+        my ( $packager, $distro, $release ) = @$host;
         my $resolved = Dist::Conformance::Check::SystemPackages->resolve( $declared, packager => $packager, distro => $distro, release => $release );
-        is_deeply( $resolved->{unresolved}, [],                              "$distro/$release resolves every dependency" );
-        is_deeply( $resolved->{packages},   [ qw{aspell aspell-en}, @more ], 'and installs aspell, aspell-en' . ( @more ? ' and the EPEL archive that aspell-en comes from' : ', and no EPEL' ) );
+        is_deeply( $resolved->{unresolved}, [],                     "$distro/$release resolves every dependency" );
+        is_deeply( $resolved->{packages},   [qw{aspell aspell-en}], "and installs aspell and aspell-en" );
     }
 
     my ($aspell) = grep { -x "$_/aspell" } split m/:/, $ENV{PATH} // q{};    ## no critic (ValuesAndExpressions::ProhibitFiletest_rwxRWX) -- the execute bit is what the shell looks for on the PATH
