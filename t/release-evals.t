@@ -58,9 +58,16 @@ C<%CASE>.  That is the profile for the floor, copied whole.
 =item * The F<META.json> that C<dzil build> writes names the distribution, and
 requires the perl that the case calls for.
 
+=item * The build writes the POD of a sub from the blurb above it, which the
+C<[Blurbs]> section of F<weaver.ini> does.  The checks add the module with that
+sub to the distribution after C<dzil test>.
+
 =item * C<dzil authordeps> names each policy that the profile enables and that
 is not part of Perl::Critic, so a fresh clone can install what its profile
 needs.
+
+=item * C<dzil authordeps> names each section of F<weaver.ini> that is not part
+of Pod::Weaver, for the same reason.
 
 =item * perlcritic, with its profile, reports C<use constant> and names
 C<Readonly>, which is what F<.preferred_modules.ini> is for.
@@ -128,7 +135,7 @@ use Test::More;
 use ExtUtils::Installed ();
 use File::Basename      qw{basename dirname};
 use File::Copy          ();
-use File::Path          qw{remove_tree};
+use File::Path          qw{make_path remove_tree};
 use File::Temp          qw{tempdir};
 use FindBin;
 use JSON::PP ();    ## no critic (PreferredModules) -- core-only, as the POD says
@@ -186,6 +193,9 @@ my $enabled_in = sub {
 # The policies that ship with Perl::Critic itself, by the name a profile uses.
 my %CORE_POLICY = map { m{/Perl/Critic/Policy/(.+)[.]pm\z} ? ( ( $1 =~ s{/}{::}gr ) => 1 ) : () } ExtUtils::Installed->new->files('Perl::Critic');
 
+# The plugins, sections and bundles that ship with Pod::Weaver itself.
+my %WEAVER_OWN = map { m{/(Pod/Weaver/.+)[.]pm\z} ? ( ( $1 =~ s{/}{::}gr ) => 1 ) : () } ExtUtils::Installed->new->files('Pod::Weaver');
+
 # What the programs that read a distribution's files make of them.  $workspace
 # is the directory a run worked in, and the distribution is the one directory
 # in it with a dist.ini.
@@ -218,9 +228,33 @@ sub check_distribution {
     my ( $test, $tested ) = $sandboxed->( $dist, { RELEASE_TESTING => 1, AUTHOR_TESTING => 1 }, qw{dzil test} );
     is( $tested, 0, "$label: RELEASE_TESTING=1 AUTHOR_TESTING=1 dzil test passes" ) or diag( substr( $test, -3000 ) );
 
+    # A sub with a blurb and no POD, for [Blurbs] in weaver.ini to write the POD of.
+    make_path("$dist/lib/ZZ");
+    spew( "$dist/lib/ZZ/Blurbed.pm", <<'PERL' );
+package ZZ::Blurbed;
+
+# ABSTRACT: A module whose one sub has a blurb
+
+use 5.014;
+use strict;
+use warnings FATAL => 'all';
+
+# Triple a number.
+# @param   count  Num  what to triple
+# @returns Num  three times the count
+sub triple {
+    my ($count) = @_;
+    return $count * 3;
+}
+
+1;
+PERL
+
     my $wants = $CASE{$case} // {};
     my $built = "$dist/zz-build";
     my ( $build, $building ) = $sandboxed->( $dist, {}, qw{dzil build --in}, $built );
+    my $woven = -e "$built/lib/ZZ/Blurbed.pm" ? slurp("$built/lib/ZZ/Blurbed.pm") : q{};
+    like( $woven, qr/^=head2[ ]triple\(count\)\n\nTriple[ ]a[ ]number[.]$/m, "$label: and the build writes the POD of a sub from its blurb" ) or diag( substr( $build, -2000 ) );
     my $meta = $building == 0 && eval { JSON::PP->new->decode( slurp("$built/META.json") ) };
     ok( $meta, "$label: dzil build writes META.json" ) or diag( substr( $build, -2000 ) );
     is( $meta && $meta->{name},                             $wants->{name}, "$label: which names the distribution" );
@@ -243,6 +277,13 @@ sub check_distribution {
     my %authordep = map  { ( $_ => 1 ) } split /\n/, $deps;
     my @missing   = grep { !$CORE_POLICY{$_} && !$authordep{"Perl::Critic::Policy::$_"} } sort keys %enabled;
     is_deeply( \@missing, [], "$label: dzil authordeps names every policy the profile enables that Perl::Critic lacks" );
+
+    # The prefixes are the ones that Pod::Weaver::Config::Assembler expands.
+    my %prefix   = ( q{@} => 'Pod::Weaver::PluginBundle::', q{-} => 'Pod::Weaver::Plugin::', q{} => 'Pod::Weaver::Section::' );
+    my @sections = map { m/\A\[\s*([@-]?)(\w+(?:::\w+)*)/ ? "$prefix{$1}$2" : () } split /\n/, slurp("$dist/weaver.ini");
+    my @unlisted = grep { !$WEAVER_OWN{$_} && !$authordep{$_} } @sections;
+    ok( scalar @sections, "$label: weaver.ini names sections" );
+    is_deeply( \@unlisted, [], "$label: and dzil authordeps names every one that Pod::Weaver lacks" );
 
     spew( "$dist/zz-constant.pl", "use strict;\nuse warnings;\nuse constant LIMIT => 1;\nprint LIMIT;\n" );
     my ($preferred) = $sandboxed->( $dist, {}, qw{perlcritic --profile .perlcriticrc --single-policy PreferredModules --verbose %m\n zz-constant.pl} );
