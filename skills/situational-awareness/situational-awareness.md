@@ -40,6 +40,23 @@ Measure twice, cut once.
 A more thorough check costs little.
 A wrong hypothesis that leads to a wrong action costs much more.
 
+An install is a common place for this mistake.
+The installer says that it succeeded, but the program still cannot load the module.
+Each of these hypotheses can explain the failure:
+
+- The installer put the module where this perl does not look.  For example, a cpanm that cannot write to site\_perl installs into a local::lib in `~/perl5`.
+- The perl that runs the program is not the perl that the installer used.
+- The release does not contain the module.
+
+Test them in that order.
+The first two are about where you are, and only the last one is about the release.
+Load the module with the interpreter that failed, for example `/path/to/perl -MSome::Module -e1`.
+If that fails, compare the `@INC` of that perl with the directory that the installer wrote to.
+If the module is in a directory of `@INC` and still does not load, look in the release for it.
+
+A report from another agent is an observation that you did not make.
+Before you give its conclusion about the environment to the user, run the check that can prove it wrong.
+
 The time of day can also matter.
 Check it, because you do not know it otherwise.
 A user often speaks of the future, for example "I will do X tomorrow".
