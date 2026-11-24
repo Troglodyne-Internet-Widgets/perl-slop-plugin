@@ -49,7 +49,9 @@ its files, so this asks them, for each run of each packaging-perl case:
 
 =over
 
-=item * C<RELEASE_TESTING=1 AUTHOR_TESTING=1 dzil test> passes.
+=item * C<RELEASE_TESTING=1 AUTHOR_TESTING=1 dzil test> passes, and runs the
+test of POD coverage that C<[Test::Pod::Coverage::More]> adds, not the one that
+C<[PodCoverageTests]> adds.
 
 =item * C<perlcritic --list-enabled> enables, with its profile, exactly the
 policies that it enables with the template profile that the case calls for, in
@@ -227,6 +229,8 @@ sub check_distribution {
 
     my ( $test, $tested ) = $sandboxed->( $dist, { RELEASE_TESTING => 1, AUTHOR_TESTING => 1 }, qw{dzil test} );
     is( $tested, 0, "$label: RELEASE_TESTING=1 AUTHOR_TESTING=1 dzil test passes" ) or diag( substr( $test, -3000 ) );
+    like( $test, qr{^t/author-pod-coverage-more[.]t[ .]+ok$}m, "$label: and runs the test of POD coverage that [Test::Pod::Coverage::More] adds" );
+    unlike( $test, qr{^t/author-pod-coverage[.]t\b}m, "$label: in place of the one that [PodCoverageTests] adds" );
 
     # A sub with a blurb and no POD, for [Blurbs] in weaver.ini to write the POD of.
     make_path("$dist/lib/ZZ");
