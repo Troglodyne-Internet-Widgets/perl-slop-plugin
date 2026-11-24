@@ -50,6 +50,7 @@ my %WRITES = (
     'weaver.ini'            => 'weaver.ini',
     'Changes'               => 'Changes',
     'prereqs.yml'           => 'prereqs.yml',
+    'MANIFEST.SKIP'         => 'MANIFEST.SKIP',
     'LICENSE'               => 'LICENSE',
     'perltidyrc'            => '.perltidyrc',
     'preferred_modules.ini' => '.preferred_modules.ini',
@@ -152,6 +153,25 @@ foreach my $flavor ( sort keys %FLAVOR ) {
         is_deeply( \@again, [], 'and a second update changes nothing' ) or diag( explain \@again );
     };
 }
+
+# A distribution scaffolded before the template existed gets it from the next
+# update, as it got prereqs.yml, and keeps a copy that it changed.
+subtest 'an update gives MANIFEST.SKIP to a distribution without one' => sub {
+    my $repo = repository( 'troglodyne-compat', %VARIABLES );
+    conformance($repo)->update;
+    unlink "$repo/MANIFEST.SKIP" or die "$repo/MANIFEST.SKIP: $!";
+
+    my ($before) = grep { $_->{check} eq 'Distribution' } @{ conformance($repo)->check };
+    is( $before->{status}, 'fail', 'check fails the distribution' );
+    like( $before->{detail}, qr/MANIFEST[.]SKIP/, 'and names the file' ) or diag( explain $before );
+
+    conformance($repo)->update;
+    is( slurp("$repo/MANIFEST.SKIP"), slurp("$TEMPLATES/MANIFEST.SKIP"), 'update writes it from the template' );
+
+    spew( "$repo/MANIFEST.SKIP", "^local-notes/\n" );
+    conformance($repo)->update;
+    is( slurp("$repo/MANIFEST.SKIP"), "^local-notes/\n", 'and leaves a copy that the distribution changed' );
+};
 
 subtest 'every template is scaffolded by a flavor' => sub {
     my @templates = sort map { s{\A.*/}{}r } grep { !-d } File::Glob::bsd_glob("$TEMPLATES/*");
