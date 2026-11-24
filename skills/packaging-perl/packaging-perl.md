@@ -280,6 +280,18 @@ module in a child perl, so a module must compile and its prerequisites must be
 installed. Only the build has the POD of a blurb, so `perldoc` on a source file
 does not show it. Run `dzil podchecker` to read it.
 
+`[Test::Pod::Coverage::More]` in `dist.ini` adds the author test that reads
+that POD. It fails for each public sub without POD. It also fails for each sub
+whose POD does not give these facts:
+
+- The type of each argument, with `@param`.
+- The return value of a sub that returns one, with `@returns`.
+- For a sub that can die, how it dies, with `@throws`.
+- A call of the sub, with `@example`.
+ It takes the place
+of `[PodCoverageTests]`, so `[@TestingMania]` turns that plugin off. A sub that
+needs no POD, such as `BUILD`, goes on a `=for Pod::Coverage` line, as before.
+
 **`.perlcriticrc`** is the house policy set, whichever of the two profiles the
 question above picked, and it names a good number of policies that are not in
 core Perl::Critic. That is what the second block of authordeps is for. Each
