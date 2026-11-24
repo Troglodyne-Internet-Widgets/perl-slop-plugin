@@ -14,3 +14,15 @@ x_system_packages:
     deb: aspell-en
     rpm: aspell-en
     test: aspell --lang=en_US -a
+  # The EPEL archive, which has aspell-en on RHEL and the distros built from
+  # it.  An installer must install it before aspell-en.
+  epel-release:
+    deb:
+      debian: ~
+      ubuntu: ~
+    rpm:
+      fedora: ~
+      rhel: epel-release
+      centos: epel-release
+      rocky: epel-release
+      almalinux: epel-release

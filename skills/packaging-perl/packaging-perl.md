@@ -371,9 +371,22 @@ installed, the policy turns itself off, and nothing checks the spelling. So the
 template declares both, and the check `SystemPackages` of the flavor fails a
 distribution that does not declare each one. If `metamerge.yml` does not exist,
 `update` writes the template. If it exists and lacks a package of the template,
-`update` adds that package, keeps the other keys, and writes the file again.
-That write removes the comments of the file. If the distribution declares
-`aspell` already, `update` keeps its entry.
+`update` adds that package at the end of its block, and keeps the rest of the
+text, with its comments. If the layout of the file is one that `update` cannot
+edit safely, such as `x_system_packages` in flow style, it changes nothing and
+tells you to add the package by hand. If the distribution declares `aspell`
+already, `update` keeps its entry.
+
+On RHEL, `aspell-en` is not in the archives of the distro. It is in EPEL, an
+extra archive that the package `epel-release` turns on. So the template also
+declares `epel-release`, for `rhel`, `centos`, `rocky` and `almalinux` only.
+Each other host needs nothing for it. The declaration has no order, so it
+does not make an installer install `epel-release` before `aspell-en`. If an
+installer installs all the packages in one command, the first install on such
+a host fails, because the archive is not on yet. Install `epel-release`
+first on such a host. On CentOS Stream, Rocky Linux and AlmaLinux, the distro
+has the package `epel-release`. RHEL itself does not have it, so on RHEL,
+install it from the URL that the EPEL documentation gives.
 
 A distribution that needs more packages, such as `ffmpeg`, adds them to the
 file:
@@ -382,6 +395,7 @@ file:
 x_system_packages:
   aspell: { deb: aspell, rpm: aspell, test: aspell --version }
   aspell-en: { deb: aspell-en, rpm: aspell-en, test: aspell --lang=en_US -a }
+  epel-release: { deb: { debian: ~, ubuntu: ~ }, rpm: { fedora: ~, rhel: epel-release } }
   FooLib:
     deb:
       name: libfoo-devel
