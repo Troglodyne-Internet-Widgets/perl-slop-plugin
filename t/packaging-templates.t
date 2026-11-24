@@ -620,4 +620,27 @@ subtest 'the gitignore hides the build of the distribution and not its tests' =>
     ok( !$ignored->('lib/Foo/Foo-Bar-notes.pod'), 'nor any other file whose name starts with it' );
 };
 
+# The release tests of [@TestingMania] load modules that its plugins declare
+# as develop prereqs, and the CLAUDE.md of a scaffold installs only what
+# `dzil authordeps` lists.  So ask dzil itself, which reads dist.ini without
+# loading a plugin.
+subtest 'dzil authordeps lists what the release tests load' => sub {
+    my ($dzil) = grep { -x "$_/dzil" } split m/:/, $ENV{PATH} // q{};
+    plan skip_all => 'no dzil on the PATH' unless $dzil;
+
+    my $root = tempdir( CLEANUP => 1 );
+    open( my $out, '>', "$root/dist.ini" ) or die "$root/dist.ini: $!";
+    print {$out} $dist;
+    close($out) or die "$root/dist.ini: $!";
+
+    open( my $deps, '-|', "$dzil/dzil", 'authordeps', '--root', $root ) or die "dzil: $!";
+    my %listed = map { m/\A(\S+)/ ? ( $1 => 1 ) : () } <$deps>;
+    close($deps);
+    is( $? >> 8, 0, 'dzil authordeps reads the dist.ini of the template' );
+
+    foreach my $module (qw{Test::Kwalitee Test::Vars}) {
+        ok( $listed{$module}, "and lists $module, which a release test loads" );
+    }
+};
+
 done_testing();
