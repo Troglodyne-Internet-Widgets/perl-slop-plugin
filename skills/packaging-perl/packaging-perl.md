@@ -220,9 +220,10 @@ release finds what the checks did not.
   it generates need `.perlcriticrc` to be *in* the build to run against it. It
   reads like a hack because it is one.
 - The `; authordep` comment lines are load-bearing. `dzil authordeps` finds
-  dependencies by reading plugin names out of `dist.ini`, so it cannot see what
-  Pod::Weaver pulls in, and it certainly cannot see which Perl::Critic policies
-  `.perlcriticrc` names. Without those comments a fresh clone cannot install
+  dependencies by reading plugin names out of `dist.ini`. So it cannot see the
+  sections that `weaver.ini` names, such as `[Blurbs]` from Pod::Coverage::More.
+  It cannot see the Perl::Critic policies that `.perlcriticrc` names either.
+  Without those comments a fresh clone cannot install
   what it needs to build, and the error it gives is about a missing policy
   rather than about a missing list. **Add a line whenever you add a policy.**
 
@@ -255,6 +256,41 @@ then explaining it in a comment nobody asked for.
 `=method` and `=attr` into sections. Write the interesting POD; let it write the
 rest. It does not write the abstract in `NAME`. You write that, as an
 `# ABSTRACT:` comment in each module. See below.
+
+`[Blurbs]` writes the POD of each sub from its blurb. A blurb is the block of
+comment lines directly above a sub:
+
+```perl
+# Triple a number.
+# @param   count  Num  what to triple
+# @returns Num  three times the count
+# @example my $nine = triple(3);
+sub triple {
+```
+
+The section reads the arguments, the types and the return values that the code
+of the sub shows, and takes the rest from the blurb. `perldoc Pod::Coverage::More::Blurb` lists the tags. Write a
+blurb above each public sub, in place of a `=head2` or `=method` for it. A sub
+with POD of its own keeps that POD. So you can convert an old distribution one
+sub at a time.
+
+Pod::Coverage::More needs perl 5.36 or later on the machine that builds the
+distribution, whatever floor the distribution declares. The section loads each
+module in a child perl, so a module must compile and its prerequisites must be
+installed. Only the build has the POD of a blurb, so `perldoc` on a source file
+does not show it. Run `dzil podchecker` to read it.
+
+`[Test::Pod::Coverage::More]` in `dist.ini` adds the author test that reads
+that POD. It fails for each public sub without POD. It also fails for each sub
+whose POD does not give these facts:
+
+- The type of each argument, with `@param`.
+- The return value of a sub that returns one, with `@returns`.
+- For a sub that can die, how it dies, with `@throws`.
+- A call of the sub, with `@example`.
+ It takes the place
+of `[PodCoverageTests]`, so `[@TestingMania]` turns that plugin off. A sub that
+needs no POD, such as `BUILD`, goes on a `=for Pod::Coverage` line, as before.
 
 **`.perlcriticrc`** is the house policy set, whichever of the two profiles the
 question above picked, and it names a good number of policies that are not in
