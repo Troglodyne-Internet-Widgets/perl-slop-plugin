@@ -258,6 +258,10 @@ spends some of it, so each one has to earn its place.
 
   The `=head1` that groups them is fine where it is. It is the per-sub `=head2`
   that has to move down to the thing it describes.
+
+  Where `weaver.ini` has `[Blurbs]`, a new sub gets a blurb, the comment block
+  directly above it, and no `=head2`. See *weaver.ini* in
+  [perl-slop:packaging-perl](../packaging-perl/packaging-perl.md).
 - **Reread your own prose as a stranger.** Fresh from writing the change, you
   cannot tell what is obvious from what merely feels obvious to you today. Ask of
   each comment: would this still be worth reading a year from now, by somebody

@@ -271,10 +271,16 @@ sub triple {
 ```
 
 The section reads the arguments, the types and the return values that the code
-of the sub shows, and takes the rest from the blurb. `perldoc Pod::Coverage::More::Blurb` lists the tags. Write a
-blurb above each public sub, in place of a `=head2` or `=method` for it. A sub
-with POD of its own keeps that POD. So you can convert an old distribution one
-sub at a time.
+of the sub shows, and takes the rest from the blurb. `perldoc Pod::Coverage::More::Blurb` lists the tags.
+
+In a new module, document each public sub with a blurb, and write no `=head2`
+or `=method` for it. A blurb says only what the code cannot show, so it is
+shorter than the POD that it replaces, and it is next to the code that it
+describes. Write POD by hand for the module itself, its `DESCRIPTION` and its
+`SYNOPSIS`.
+
+A sub with POD of its own keeps that POD, and the section writes none for it.
+So you can convert an old distribution one sub at a time.
 
 Pod::Coverage::More needs perl 5.36 or later on the machine that builds the
 distribution, whatever floor the distribution declares. The section loads each
@@ -290,9 +296,15 @@ whose POD does not give these facts:
 - The return value of a sub that returns one, with `@returns`.
 - For a sub that can die, how it dies, with `@throws`.
 - A call of the sub, with `@example`.
- It takes the place
-of `[PodCoverageTests]`, so `[@TestingMania]` turns that plugin off. A sub that
-needs no POD, such as `BUILD`, goes on a `=for Pod::Coverage` line, as before.
+
+It takes the place of `[PodCoverageTests]`, so `[@TestingMania]` turns that
+plugin off. A sub that needs no POD, such as `BUILD`, goes on a
+`=for Pod::Coverage` line, as before.
+
+In an old distribution, a sub with a section of its own heads it with the
+call, such as `=head2 name($arg)` or `=head2 Class->name($arg)`. A heading that
+assigns the call, such as `=head2 $x = name($arg)`, fails: the test takes it
+for an example, and an example goes in a verbatim block.
 
 **`.perlcriticrc`** is the house policy set, whichever of the two profiles the
 question above picked, and it names a good number of policies that are not in
