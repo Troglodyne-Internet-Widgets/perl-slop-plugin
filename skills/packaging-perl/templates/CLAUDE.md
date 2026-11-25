@@ -27,6 +27,27 @@ Every module and every test says `use {{PERL_FLOOR}}`, and `perl:` in
 that file names the policies that this version of perl makes unnecessary.  So
 if you raise or lower the floor, change the profile as well as the `use` lines.
 
+A test that passes on one perl says nothing about another.  Before you say
+that a change works, run the tests on a perl of the floor and on the newest
+perl that you have.  perlbrew has the perls that are not on the `PATH`.
+`perlbrew list` names them, and `perlbrew exec` runs the tests with one:
+
+```
+perlbrew list
+perlbrew exec --with perl-5.36.3 prove -lr t
+```
+
+If perlbrew has no perl of the floor, `perlbrew install` builds one, for
+example `perlbrew install perl-5.36.3`.  If a perl of perlbrew lacks a
+prerequisite, install the prerequisites into that perl.  Run `cpanm` with that
+perl, so that it installs there:
+
+```
+dzil listdeps | grep -vx perl | xargs ~/perl5/perlbrew/perls/perl-5.36.3/bin/perl "$(command -v cpanm)" --notest
+```
+
+In the pull request, name each perl that you ran the tests on.
+
 ## Where it is written down
 
 | | |
