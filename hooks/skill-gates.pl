@@ -270,10 +270,12 @@ sub main {
     return 0;
 }
 
-=head2 $output = decide(\%input)
+=head2 decide(\%input)
 
 Returns what to print for this hook event, or undef to allow it and say
 nothing.
+
+    my $output = decide(\%input);
 
 =cut
 
@@ -338,7 +340,7 @@ sub decide {
     return;
 }
 
-=head2 $output = prose_check_gate($dir, $prose)
+=head2 prose_check_gate($dir, $prose)
 
 Refuses a post or a commit whose C<$prose> the repository at C<$dir> rejects.
 A repository names its check under C<prose_check> in F<.perl-slop.json>: a
@@ -347,6 +349,8 @@ standard input and runs in the root.  If it exits 0, the action is allowed.
 Any other exit refuses it, with what the check printed as the reason.  A
 check that is not an executable file, or that does not exit in
 C<$PROSE_CHECK_SECONDS>, refuses too, because the repository asked for it.
+
+    my $output = prose_check_gate($dir, $prose);
 
 =cut
 
@@ -369,13 +373,15 @@ sub prose_check_gate {
     return deny( "$about refused this:\n$said\n" . 'Take out what it names, then try again.  If the check is wrong, ask the user.  Do not post or commit another way.' );
 }
 
-=head2 ($status, $output) = run_prose_check($check, $root, $prose)
+=head2 run_prose_check($check, $root, $prose)
 
 Runs the program at C<$check> in C<$root>, with C<$prose> on standard input,
 and returns its exit status and what it printed, standard error included.
 The status is -1 when it did not exit in C<$PROSE_CHECK_SECONDS>, and is then
 killed, or when it could not start.  A check that a signal ended has 128 plus
 the number of the signal, as a shell reports it.
+
+    my ($status, $output) = run_prose_check($check, $root, $prose);
 
 =cut
 
@@ -409,7 +415,7 @@ sub run_prose_check {
     return ( $? & 127 ? 128 + ( $? & 127 ) : $? >> 8, $said );
 }
 
-=head2 $prose = command_prose($command, $dir)
+=head2 command_prose($command, $dir)
 
 The prose of a Bash command that posts or commits, one word or body on each
 line:
@@ -436,6 +442,8 @@ The body of each heredoc and each here string.
 
 Other words, such as the directory of a C<cd>, are paths and not prose, and
 are left out.  A path can hold the name of the host that the session runs on.
+
+    my $prose = command_prose($command, $dir);
 
 =cut
 
@@ -475,10 +483,12 @@ sub command_prose {
     return join "\n", @prose;
 }
 
-=head2 @strings = strings_in($data)
+=head2 strings_in($data)
 
 Every string in C<$data>, a structure of hashes and arrays such as the input
 of an MCP tool, in the order of its keys.
+
+    my @strings = strings_in($data);
 
 =cut
 
@@ -496,13 +506,15 @@ sub strings_in {
     return @strings;
 }
 
-=head2 $output = edit_gate(\%input, \@files)
+=head2 edit_gate(\%input, \@files)
 
 Refuses an edit to any of C<@files> until C<perl-slop:information-security> and
 C<perl-slop:situational-awareness> are loaded, for a file in any language, and C<perl-slop:reading-perl> too, for
 a Perl file, and until the skills that F<.perl-slop.json> names under
 C<before_edit> for its path are loaded.  Each item of C<@files> is a path and,
 for a Write, the content that it writes.
+
+    my $output = edit_gate(\%input, \@files);
 
 =cut
 
@@ -530,7 +542,7 @@ sub edit_gate {
     return deny( "Load @{[ list(@missing) ]} with the Skill tool before an edit to " . join( ', ', @named ) . ', then make the edit again.  A skill counts once it is loaded after the last compaction.' . add_dir_advice( [ sort keys %roots ], @missing ) . plugin_advice(@missing) );
 }
 
-=head2 $output = commit_gate(\%input, $dir)
+=head2 commit_gate(\%input, $dir)
 
 Refuses a commit in the checkout at C<$dir> until the skills it needs are
 loaded after the commit at its C<HEAD>.  Those are
@@ -544,6 +556,8 @@ C<git commit> in the transcript.  A command that runs C<git commit> and then
 something else exits with the status of the last command, so its result in
 the transcript does not say whether the commit happened.  Only a commit that
 happened moves C<HEAD>.
+
+    my $output = commit_gate(\%input, $dir);
 
 =cut
 
@@ -567,13 +581,15 @@ sub commit_gate {
     return deny( "Before this commit, load @{[ list(@missing) ]} with the Skill tool and apply each to the " . 'changes, then commit again.  Each must be loaded after the last commit in this repository, ' . 'and after the last compaction.' . add_dir_advice( [$root], @missing ) . plugin_advice(@missing) );
 }
 
-=head2 $text = plugin_advice(@missing)
+=head2 plugin_advice(@missing)
 
 A sentence for each plugin other than this one that owns a skill of
 C<@missing>, named as C<plugin:skill>: if the Skill tool does not know the
 skill, the plugin is not enabled in this session, and only the user can install
 and enable it.  It tells the model to stop and ask, rather than to find another
 way to make the change.  An empty string when there is none.
+
+    my $text = plugin_advice(@missing);
 
 =cut
 
@@ -590,12 +606,14 @@ sub plugin_advice {
     } sort keys %of;
 }
 
-=head2 $text = add_dir_advice(\@roots, @missing)
+=head2 add_dir_advice(\@roots, @missing)
 
 A sentence for each repository at one of C<@roots> that keeps any of
 C<@missing> in its F<.claude/skills>: if the Skill tool does not know them, ask
 the user to run C</add-dir> for that repository, which only the user can run.
 An empty string when there is none.
+
+    my $text = add_dir_advice(\@roots, @missing);
 
 =cut
 
@@ -611,11 +629,13 @@ sub add_dir_advice {
     return join( q{}, @said );
 }
 
-=head2 $output = publish_gate(\%input)
+=head2 publish_gate(\%input)
 
 Refuses a post to an issue, a pull request, a review, a release or a gist
 until C<perl-slop:information-security> and C<perl-slop:situational-awareness>
 are loaded.
+
+    my $output = publish_gate(\%input);
 
 =cut
 
@@ -624,10 +644,12 @@ sub publish_gate {
     return load_gate( $input, $BASE{prose}, 'a post to an issue, a pull request, a review, a release or a gist', 'post again' );
 }
 
-=head2 $output = signal_gate(\%input)
+=head2 signal_gate(\%input)
 
 Refuses a command that signals a process, or that picks processes by pattern,
 until C<perl-slop:killing-processes> is loaded.
+
+    my $output = signal_gate(\%input);
 
 =cut
 
@@ -636,13 +658,15 @@ sub signal_gate {
     return load_gate( $input, $BASE{signal}, 'a command that signals a process or picks processes by pattern', 'run it again' );
 }
 
-=head2 $output = copy_gate(\%input)
+=head2 copy_gate(\%input)
 
 Refuses a command that copies a tree until C<perl-slop:copying-files> is
 loaded.  The hook does not measure the copy, because to do that it must parse
 the include and exclude rules of rsync, and a wrong parse blocks a good copy
 or passes a bad one.  The model can measure with the arguments that it is
 about to use.
+
+    my $output = copy_gate(\%input);
 
 =cut
 
@@ -651,10 +675,12 @@ sub copy_gate {
     return load_gate( $input, $BASE{copy}, 'a command that copies a tree', 'measure the copy and the free space, and run it again' );
 }
 
-=head2 $output = debug_gate(\%input)
+=head2 debug_gate(\%input)
 
 Refuses a command that runs the perl debugger, or an edit that adds
 C<$DB::single>, until C<perl-slop:debugging-perl> is loaded.
+
+    my $output = debug_gate(\%input);
 
 =cut
 
@@ -663,10 +689,12 @@ sub debug_gate {
     return load_gate( $input, $BASE{debug}, 'a run of the perl debugger, or a breakpoint in the code', 'try it again' );
 }
 
-=head2 $bool = is_debugger($command)
+=head2 is_debugger($command)
 
 Whether the Bash C<$command> runs the perl debugger, or sets C<PERLDB_OPTS>.
 C<-d:Module> loads a module in place of the debugger, so it does not count.
+
+    my $bool = is_debugger($command);
 
 =cut
 
@@ -675,10 +703,12 @@ sub is_debugger {
     return bare_command($command) =~ $DEBUGGER_RX;
 }
 
-=head2 $bool = adds_breakpoint(\%tool_input)
+=head2 adds_breakpoint(\%tool_input)
 
 Whether the input of an Edit, Write or MultiEdit puts C<$DB::single> into a
 file.
+
+    my $bool = adds_breakpoint(\%tool_input);
 
 =cut
 
@@ -689,7 +719,7 @@ sub adds_breakpoint {
     return List::Util::any { m/\$DB::single\b/ } @text;
 }
 
-=head2 $output = read_nudge(\%input)
+=head2 read_nudge(\%input)
 
 The PostToolUse output that reminds the model of C<perl-slop:debugging-perl>
 once for a prompt, after the turn read C<$READS_BEFORE_NUDGE> times with no
@@ -700,6 +730,8 @@ loaded.
 The transcript is written late, so the count can lag by a call or two.  So it
 fires at the first call that sees enough reads, and a file in
 C<CLAUDE_PLUGIN_DATA> records the prompt that it fired for.
+
+    my $output = read_nudge(\%input);
 
 =cut
 
@@ -733,11 +765,13 @@ sub read_nudge {
     };
 }
 
-=head2 ($reads, $prompt_at) = reads_this_turn($transcript_path)
+=head2 reads_this_turn($transcript_path)
 
 The number of reads since the last prompt of the user, after the last
 compaction, and the timestamp of that prompt as the transcript writes it.  An
 Edit, Write, MultiEdit or NotebookEdit sets the count back to 0.
+
+    my ($reads, $prompt_at) = reads_this_turn($transcript_path);
 
 =cut
 
@@ -775,10 +809,12 @@ sub reads_this_turn {
     return ( $reads, $prompt_at );
 }
 
-=head2 $path = nudge_file($session_id)
+=head2 nudge_file($session_id)
 
 The file in which C<read_nudge> records the prompt that it last fired for, or
 undef for a session id that cannot be a file name.
+
+    my $path = nudge_file($session_id);
 
 =cut
 
@@ -789,10 +825,12 @@ sub nudge_file {
     return $file;
 }
 
-=head2 $line = read_first_line($path)
+=head2 read_first_line($path)
 
 The first line of the file at C<$path>, without its newline, or undef when
 there is no such file.
+
+    my $line = read_first_line($path);
 
 =cut
 
@@ -805,10 +843,12 @@ sub read_first_line {
     return $line;
 }
 
-=head2 $output = pr_gate(\%input)
+=head2 pr_gate(\%input)
 
 Refuses a pull request, to any repository, until C<perl-slop:pull-requests>
 is loaded.
+
+    my $output = pr_gate(\%input);
 
 =cut
 
@@ -817,13 +857,15 @@ sub pr_gate {
     return load_gate( $input, $BASE{pr}, 'a pull request', 'run it again' );
 }
 
-=head2 $output = assignee_gate()
+=head2 assignee_gate()
 
 Refuses a C<gh pr create> that does not assign the pull request to the account
 that C<PERL_SLOP_ASSIGNEE> names, or to anybody when it names none.  Without it,
 the refusal asks for C<@me>, the account that gh runs as.  A session whose gh
 runs as a bot names the reviewer there, because GitHub tells nobody of what they
 did themselves.
+
+    my $output = assignee_gate();
 
 =cut
 
@@ -833,9 +875,11 @@ sub assignee_gate {
     return deny( 'Pass --assignee @me to gh pr create, then run it again.  ' . '@me is the account that gh runs as, so the pull request reaches the inbox of the user.' );
 }
 
-=head2 $login = wanted_assignee()
+=head2 wanted_assignee()
 
 The login that C<PERL_SLOP_ASSIGNEE> names, or the empty string.
+
+    my $login = wanted_assignee();
 
 =cut
 
@@ -843,10 +887,12 @@ sub wanted_assignee {
     return $ENV{PERL_SLOP_ASSIGNEE} // q{};
 }
 
-=head2 $output = load_gate(\%input, \@skills, $action, $retry)
+=head2 load_gate(\%input, \@skills, $action, $retry)
 
 Refuses C<$action> until each of C<@skills> is loaded after the last
 compaction.  The refusal tells the model to load them, then to C<$retry>.
+
+    my $output = load_gate(\%input, \@skills, $action, $retry);
 
 =cut
 
@@ -860,7 +906,7 @@ sub load_gate {
     return deny( "Load @{[ list(@missing) ]} with the Skill tool before $action, then $retry.  " . 'A skill counts once it is loaded after the last compaction.' );
 }
 
-=head2 $output = prompt_reminder(\%input)
+=head2 prompt_reminder(\%input)
 
 Adds a reminder of C<perl-slop:information-security> and
 C<perl-slop:situational-awareness> to every prompt until they are loaded, because a reply to the user is prose too.  Adds a reminder of
@@ -870,6 +916,8 @@ C<perl-slop:profiling-perl> to a prompt about speed, in a Perl project, when
 that skill is not loaded.  Adds a reminder of C<perl-slop:debugging-perl> to a
 prompt that names the debugger, or says that a program did what it cannot do,
 in a Perl project, when that skill is not loaded.
+
+    my $output = prompt_reminder(\%input);
 
 =cut
 
@@ -900,9 +948,11 @@ sub prompt_reminder {
     };
 }
 
-=head2 $bool = is_about_speed($prompt, $cwd)
+=head2 is_about_speed($prompt, $cwd)
 
 Whether C<$prompt> is about speed, and C<$cwd> is in a Perl project.
+
+    my $bool = is_about_speed($prompt, $cwd);
 
 =cut
 
@@ -913,10 +963,12 @@ sub is_about_speed {
     return looks_like_perl_project($root);
 }
 
-=head2 $bool = is_about_stuck($prompt, $cwd)
+=head2 is_about_stuck($prompt, $cwd)
 
 Whether C<$prompt> names the debugger, or says that a program did what its
 code says it cannot do, and C<$cwd> is in a Perl project.
+
+    my $bool = is_about_stuck($prompt, $cwd);
 
 =cut
 
@@ -927,10 +979,12 @@ sub is_about_stuck {
     return looks_like_perl_project($root);
 }
 
-=head2 $output = deny($reason)
+=head2 deny($reason)
 
 The PreToolUse output that refuses the call.  Claude Code gives C<$reason> to
 the model.
+
+    my $output = deny($reason);
 
 =cut
 
@@ -945,9 +999,11 @@ sub deny {
     };
 }
 
-=head2 $text = list(@names)
+=head2 list(@names)
 
 The names joined for a sentence: C<a>, C<a and b>, C<a, b and c>.
+
+    my $text = list(@names);
 
 =cut
 
@@ -957,11 +1013,13 @@ sub list {
     return join( ', ', @names[ 0 .. $#names - 1 ] ) . " and $names[-1]";
 }
 
-=head2 $line = is_loaded(\%loaded, $name)
+=head2 is_loaded(\%loaded, $name)
 
 The time, in epoch seconds, when C<$name> was last loaded, or undef.  A name
 with a plugin prefix is also satisfied by the bare name, which is how the text
 of a skill names its own directory.
+
+    my $line = is_loaded(\%loaded, $name);
 
 =cut
 
@@ -974,7 +1032,7 @@ sub is_loaded {
     return $last;
 }
 
-=head2 \%state = session($transcript_path, $session_id)
+=head2 session($transcript_path, $session_id)
 
 What is known since the last compaction: C<loaded>, each skill by the time
 when it was last loaded, in epoch seconds.  It reads the transcript, and adds
@@ -984,6 +1042,8 @@ The transcript alone is not enough.  Claude Code writes it some time after the
 fact, so the Skill calls since the last Bash call are often not in it when the
 next hook runs.  A load that only the transcript can show is then missed, and
 the gate refuses a commit whose skills were loaded a moment before.
+
+    my $state = session($transcript_path, $session_id);
 
 =cut
 
@@ -996,10 +1056,12 @@ sub session {
     return \%state;
 }
 
-=head2 $since = transcript_loads(\%state, $transcript_path)
+=head2 transcript_loads(\%state, $transcript_path)
 
 Adds to C<$state{loaded}> each load that the transcript shows after its last
 compaction.  Returns the time of that compaction, or 0 when there is none.
+
+    my $since = transcript_loads(\%state, $transcript_path);
 
 =cut
 
@@ -1028,11 +1090,13 @@ sub transcript_loads {
     return $since;
 }
 
-=head2 $since = seek_past_compaction($fh)
+=head2 seek_past_compaction($fh)
 
 Moves C<$fh> to the line after the last compaction, and returns the time of
 that compaction.  With no compaction, it leaves C<$fh> at the start and
 returns 0.  Nothing before a compaction counts, so it is not decoded.
+
+    my $since = seek_past_compaction($fh);
 
 =cut
 
@@ -1047,10 +1111,12 @@ sub seek_past_compaction {
     return entry_time( eval { $JSON_CLASS->new->decode($boundary) } // {} );
 }
 
-=head2 $seconds = entry_time(\%entry)
+=head2 entry_time(\%entry)
 
 The C<timestamp> of a transcript entry in epoch seconds, or 0 when it has none
 that this can read.
+
+    my $seconds = entry_time(\%entry);
 
 =cut
 
@@ -1061,10 +1127,12 @@ sub entry_time {
     return Time::Local::timegm( $s, $mi, $h, $d, $mo - 1, $y ) + ( $frac // 0 );
 }
 
-=head2 $bool = worth_decoding($line)
+=head2 worth_decoding($line)
 
 Whether C<$line> can hold a load, by the strings in it.  Decoding every line
 of a long transcript is what makes a scan slow.
+
+    my $bool = worth_decoding($line);
 
 =cut
 
@@ -1190,12 +1258,14 @@ sub recorded_loads {
     return;
 }
 
-=head2 $file = loads_file($session_id)
+=head2 loads_file($session_id)
 
 The file of loads for C<$session_id>, in C<CLAUDE_PLUGIN_DATA>, or in a
 F<perl-slop> directory in the temporary directory when that is not set.
 Undef for a session ID that is not letters, digits, C<_> and C<->, because it
 becomes part of a path.
+
+    my $file = loads_file($session_id);
 
 =cut
 
@@ -1206,10 +1276,12 @@ sub loads_file {
     return File::Spec->catfile( $dir, "loads-$session_id.jsonl" );
 }
 
-=head2 $seconds = head_time($root)
+=head2 head_time($root)
 
 The commit time of C<HEAD> in the checkout at C<$root>, in epoch seconds, or
 undef when it has no commit or there is no C<git> on the C<PATH>.
+
+    my $seconds = head_time($root);
 
 =cut
 
@@ -1221,11 +1293,13 @@ sub head_time {
     return defined $time && $time =~ m/\A(\d+)/ ? $1 : undef;
 }
 
-=head2 $bool = is_commit($command)
+=head2 is_commit($command)
 
 Whether a Bash command runs C<git commit>, at its start or after a separator.
 C<git commit-tree>, a C<git log> that mentions a commit, and a C<git commit>
 in quotes or in the body of a heredoc, are not.
+
+    my $bool = is_commit($command);
 
 =cut
 
@@ -1234,11 +1308,13 @@ sub is_commit {
     return bare_command($command) =~ m/${COMMAND_START_RX}git\s+(?:-\S+\s+\S+\s+)*commit(?![\w-])/;
 }
 
-=head2 $bool = is_publish($command)
+=head2 is_publish($command)
 
 Whether a Bash command posts to an issue, a pull request, a release or a gist
 with C<gh> or C<glab>.  Text in quotes or in the body of a heredoc does not
 count.
+
+    my $bool = is_publish($command);
 
 =cut
 
@@ -1247,12 +1323,14 @@ sub is_publish {
     return bare_command($command) =~ $PUBLISH_RX;
 }
 
-=head2 $bool = is_unassigned_pr($command)
+=head2 is_unassigned_pr($command)
 
 Whether a Bash command runs C<gh pr create> that assigns nobody, or, when
 C<PERL_SLOP_ASSIGNEE> names an account, that does not assign that one.  Logins
 compare in any case, as GitHub compares them.  A flag inside a quoted word, such
 as a title, does not count.
+
+    my $bool = is_unassigned_pr($command);
 
 =cut
 
@@ -1266,7 +1344,7 @@ sub is_unassigned_pr {
     return !List::Util::any { lc $_ eq lc $wanted } @assignees;
 }
 
-=head2 $args = pr_create_args($command)
+=head2 pr_create_args($command)
 
 The arguments of the first C<gh pr create> in a Bash command, up to the end of
 its command, or undef when it runs none.  Each argument is unquoted, with a
@@ -1274,6 +1352,8 @@ NUL for each blank in it, and they are joined with a space.  So a quoted word
 stays one word, and a flag inside one, such as in a title, does not start a
 word.  What a C<$(...)> prints is not known, so it adds nothing.  See
 C<shell_commands>.
+
+    my $args = pr_create_args($command);
 
 =cut
 
@@ -1286,11 +1366,13 @@ sub pr_create_args {
     return;
 }
 
-=head2 $bool = is_signal($command)
+=head2 is_signal($command)
 
 Whether a Bash command runs C<kill>, C<pkill>, C<killall> or C<pgrep>, at its
 start, after a separator, after C<sudo> or C<xargs>, or in a command
 substitution.  Text in quotes or in the body of a heredoc does not count.
+
+    my $bool = is_signal($command);
 
 =cut
 
@@ -1299,12 +1381,14 @@ sub is_signal {
     return bare_command($command) =~ $SIGNAL_RX;
 }
 
-=head2 $bool = is_copy($command)
+=head2 is_copy($command)
 
 Whether a Bash command runs C<rsync> or C<dd>, C<cp> with C<-r>, C<-R> or
 C<-a>, C<scp -r>, or a C<tar> that extracts, at its start, after a separator,
 after C<sudo> or C<xargs>, or in a command substitution.  Text in quotes or in
 the body of a heredoc does not count.
+
+    my $bool = is_copy($command);
 
 =cut
 
@@ -1313,7 +1397,7 @@ sub is_copy {
     return bare_command($command) =~ $COPY_RX;
 }
 
-=head2 @commands = shell_commands($command)
+=head2 shell_commands($command)
 
 The simple commands of a Bash command, in the order that they start.  Each is
 a hash of three lists:
@@ -1346,6 +1430,8 @@ brackets, is a command of its own.  What a substitution prints is not known,
 so it adds nothing to the word that it is in.  A C<#> at the start of a word
 starts a comment.  The end of the text ends whatever is still open, so a
 command that the shell refuses is read as far as it goes.
+
+    my @commands = shell_commands($command);
 
 =cut
 
@@ -1410,9 +1496,11 @@ sub shell_quoted_token {
     return shell_add( $parse, $token, 1 );
 }
 
-=head2 $simple = shell_simple()
+=head2 shell_simple()
 
 A new simple command, with no words, writes or input.
+
+    my $simple = shell_simple();
 
 =cut
 
@@ -1420,10 +1508,12 @@ sub shell_simple {
     return { words => [], writes => [], input => [] };
 }
 
-=head2 $kind = shell_frame(\%parse)
+=head2 shell_frame(\%parse)
 
 What the parse is inside: C<">, C<$(>, a backquote, C<(>, or the empty
 string at the top.
+
+    my $kind = shell_frame(\%parse);
 
 =cut
 
@@ -1574,10 +1664,12 @@ sub shell_bodies {
     return;
 }
 
-=head2 $text = bare_text(\@words)
+=head2 bare_text(\@words)
 
 The bare form of C<@words>, a list of words from
 C<shell_commands>, joined with a space.
+
+    my $text = bare_text(\@words);
 
 =cut
 
@@ -1586,12 +1678,14 @@ sub bare_text {
     return join q{ }, map { $_->{bare} } @$words;
 }
 
-=head2 $text = bare_command($command)
+=head2 bare_command($command)
 
 The bare words of each command of the Bash C<$command>, with a newline after
 each command but the last.  So text in quotes or in the body of a heredoc is
 not read as a command, and a pattern that starts at C<$COMMAND_START_RX>
 finds each command.
+
+    my $text = bare_command($command);
 
 =cut
 
@@ -1600,10 +1694,12 @@ sub bare_command {
     return join "\n", map { bare_text( $_->{words} ) } shell_commands($command);
 }
 
-=head2 $words = words_after(\@words, $rx)
+=head2 words_after(\@words, $rx)
 
 The words of one command that come after the first match of C<$rx> against
 C<bare_text>, or undef when it does not match.
+
+    my $words = words_after(\@words, $rx);
 
 =cut
 
@@ -1615,7 +1711,7 @@ sub words_after {
     return [ @{$words}[ $i .. $#$words ] ];
 }
 
-=head2 $dir = command_dir($command, $cwd)
+=head2 command_dir($command, $cwd)
 
 The directory that a command runs its git in: the one after C<git -C>, or the
 last C<cd> that starts a command, or C<$cwd>.
@@ -1627,6 +1723,8 @@ matched, a commit after a heredoc was judged against whatever directory the
 shell happened to be in rather than the repository it names.
 
 A C<cd> in the body of a heredoc is data, so it does not count.
+
+    my $dir = command_dir($command, $cwd);
 
 =cut
 
@@ -1648,12 +1746,14 @@ sub command_dir {
     return File::Spec->file_name_is_absolute($dir) ? $dir : File::Spec->catdir( $cwd, $dir );
 }
 
-=head2 @files = written_perl_files($command, $dir)
+=head2 written_perl_files($command, $dir)
 
 The Perl files that a Bash command writes, relative to C<$dir>: the file of
 each redirection that writes one, and each Perl file that a command which
 writes names, in its words or in what it reads.  A command that only reads
 writes nothing, whatever its quoted arguments say.
+
+    my @files = written_perl_files($command, $dir);
 
 =cut
 
@@ -1672,10 +1772,12 @@ sub written_perl_files {
     return map { File::Spec->file_name_is_absolute($_) ? $_ : File::Spec->catfile( $dir, $_ ) } @files;
 }
 
-=head2 $bool = is_perl($file, $content)
+=head2 is_perl($file, $content)
 
 Whether C<$file> is Perl: by its extension, or by a C<perl> shebang in
 C<$content> or in the file on disk.
+
+    my $bool = is_perl($file, $content);
 
 =cut
 
@@ -1694,11 +1796,13 @@ sub is_perl {
     return defined $first && $first =~ m/\A#!.*\bperl\b/;
 }
 
-=head2 $root = checkout_root($path)
+=head2 checkout_root($path)
 
 The nearest directory at or above C<$path> with a F<.git> in it, which a
 worktree has as a file, or undef.  C<$path> is a file, or a directory to start
 from.
+
+    my $root = checkout_root($path);
 
 =cut
 
@@ -1714,9 +1818,11 @@ sub checkout_root {
     }
 }
 
-=head2 $relative = relative($root, $file)
+=head2 relative($root, $file)
 
 C<$file> relative to C<$root>, or C<$file> as it is when there is no root.
+
+    my $relative = relative($root, $file);
 
 =cut
 
@@ -1725,7 +1831,7 @@ sub relative {
     return defined $root ? File::Spec->abs2rel( File::Spec->rel2abs($file), $root ) : $file;
 }
 
-=head2 @paths = changed_files($root)
+=head2 changed_files($root)
 
 Every file that differs from HEAD, staged or not, and every untracked file.
 All of them, and not only what is staged, because a command that adds and
@@ -1734,6 +1840,8 @@ commits has not added anything yet when this runs.
 It asks C<git status>, because no core module reads a git index.  Without
 C<git> on the C<PATH> it returns nothing, and the commit gate allows the
 commit.
+
+    my @paths = changed_files($root);
 
 =cut
 
@@ -1745,10 +1853,12 @@ sub changed_files {
     return map { s/\A"(.*)"\z/$1/r } @files;
 }
 
-=head2 @skills = configured($root, $gate, $path)
+=head2 configured($root, $gate, $path)
 
 The skills that F<.perl-slop.json> at C<$root> names under C<$gate> for the
 globs that C<$path> matches.
+
+    my @skills = configured($root, $gate, $path);
 
 =cut
 
@@ -1767,10 +1877,12 @@ sub configured {
     return @skills;
 }
 
-=head2 \%config = config($root)
+=head2 config($root)
 
 What F<.perl-slop.json> at C<$root> holds, or an empty hash when it is not
 there or is not a JSON object.
+
+    my $config = config($root);
 
 =cut
 
@@ -1782,9 +1894,11 @@ sub config {
     return ref $config eq 'HASH' ? $config : {};
 }
 
-=head2 $data = read_json($fh)
+=head2 read_json($fh)
 
 The JSON that the rest of C<$fh> holds, or undef if it is not JSON.
+
+    my $data = read_json($fh);
 
 =cut
 
@@ -1795,10 +1909,12 @@ sub read_json {
     };
 }
 
-=head2 $rx = glob_rx($glob)
+=head2 glob_rx($glob)
 
 A pattern for a path glob: C<**> is any path, C<*> is any name, and C<?> is
 one character of a name.
+
+    my $rx = glob_rx($glob);
 
 =cut
 
@@ -1808,9 +1924,11 @@ sub glob_rx {
     return qr/\A$rx\z/;
 }
 
-=head2 $bool = looks_like_perl_project($root)
+=head2 looks_like_perl_project($root)
 
 Whether C<$root> has the files of a Perl distribution, or a F<lib/>.
+
+    my $bool = looks_like_perl_project($root);
 
 =cut
 
