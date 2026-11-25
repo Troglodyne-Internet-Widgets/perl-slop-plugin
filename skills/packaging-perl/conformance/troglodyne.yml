@@ -26,6 +26,13 @@ checks:
     template: templates/CLAUDE.md
     mentions:
       - perl-slop:reading-perl
+  # The authordeps of dist.ini, which Distribution writes only when the file is
+  # missing.  The template raises a version when the build needs a newer
+  # release, and this raises it in every distribution.  .conformance.yml can
+  # turn one off, or ask for another version, under overrides.
+  AuthorDeps:
+    file: dist.ini
+    template: templates/dist.ini
   Distribution:
     module: ToolConfiguration
     files:

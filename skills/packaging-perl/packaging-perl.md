@@ -136,10 +136,11 @@ installs them into `.git/hooks`. If no variable fills a placeholder of a
 template, `update` does not write that file, and it says which variable to add.
 `check` must report a pass for each check.
 
-`update` never overwrites a file that exists, with two exceptions.
+`update` never overwrites a file that exists, with three exceptions.
 `.perlcriticrc` is one, as the next paragraph says. `metamerge.yml` is the
-other: if it does not declare the packages of its template, `update` adds
-them, as the section on that file says. So you can run `update` again in a
+second: if it does not declare the packages of its template, `update` adds
+them, as the section on that file says. The authordep lines of `dist.ini` are
+the third, as the paragraph after the overrides of the profile says. So you can run `update` again in a
 clone, which then gets the hooks that git does not install for it. You can also run it in an older
 distribution, which then gets the files that it lacks. So the procedure is the
 same for a new distribution and an old one. Run `update`, then `check`, and do
@@ -179,6 +180,27 @@ In a distribution whose `.perlcriticrc` already has changes of its own, run
 `conformance adopt` before the first such `update`. It prints the overrides
 that keep what the profile has now. Merge them into `.conformance.yml`, and
 delete each one that is drift rather than a choice.
+
+The authordeps of `dist.ini` follow the template in the same way. `check`
+fails each authordep of the template that `dist.ini` lacks, or asks for at a
+lower version. `update` raises each such version, and adds each missing line
+after the last authordep line. It changes no other line of the file, so
+update a comment beside a raised line by hand. An authordep of your own stays,
+and so does a higher version. An authordep of a module that the distribution
+has under `lib/` is never asked for. Declare a departure under `AuthorDeps`:
+
+```yaml
+checks:
+  AuthorDeps:
+    overrides:
+      # This distribution has no tests-covering hooks.
+      Perl::Tests::Covering: off
+      # The build host has only 0.003 until it is upgraded.
+      Pod::Weaver::Section::Blurbs: '0.003'
+```
+
+`conformance adopt` prints the overrides that keep the authordeps that
+`dist.ini` has now.
 
 `update` also writes two files that Claude Code reads, and `check` fails a
 distribution without them. `.claude/settings.json` enables this plugin and

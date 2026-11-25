@@ -31,6 +31,7 @@ BEGIN {
     eval { require Dist::Conformance;                        1 } or plan skip_all => 'Dist::Conformance is not installed';
     eval { require Dist::Conformance::Check::SystemPackages; 1 } or plan skip_all => 'Dist::Conformance is too old to have the check SystemPackages, which the flavors run';
     eval { require Dist::Conformance::Check::RefusedIniKeys; 1 } or plan skip_all => 'Dist::Conformance is too old to have the check RefusedIniKeys, which the flavors run';
+    eval { require Dist::Conformance::Check::AuthorDeps;     1 } or plan skip_all => 'Dist::Conformance is too old to have the check AuthorDeps, which the flavors run';
     Dist::Conformance::Check::SystemPackages->config_schema->{properties}{template} or plan skip_all => 'Dist::Conformance is too old for the template of SystemPackages, which the flavors give';
 }
 
@@ -223,7 +224,28 @@ subtest 'dist.ini lets [GithubMeta] take the account from the remote' => sub {
     $result->("name = Foo-Bar\n; the metadata\n[GithubMeta]\nissues = 1\nuser = someone\nhomepage = https://test.test/\n");
     my ($update) = grep { $_->{check} eq 'GithubMetaFromRemote' } @{ conformance($repo)->update };
     is_deeply( $update->{manual}, [], 'update leaves nothing for a person' ) or diag( explain $update );
-    is( slurp("$repo/dist.ini"), "name = Foo-Bar\n; the metadata\n[GithubMeta]\nissues = 1\nhomepage = https://test.test/\n", 'and removes the line of user, and only that' );
+    like( slurp("$repo/dist.ini"), qr/\Aname\ =\ Foo-Bar\n;\ the\ metadata\n\[GithubMeta\]\nissues\ =\ 1\nhomepage\ =\ https:\/\/test[.]test\/\n/, 'and removes the line of user, and only that' );
+};
+
+# A dist.ini made from an older template asks for older releases of the
+# plugins that the build runs.  AuthorDeps holds each authordep to the template.
+subtest 'dist.ini asks for each authordep of the template, and update raises one that asks for less' => sub {
+    my $repo  = repository( 'troglodyne-5.040', %VARIABLES );
+    my $check = sub {
+        my ($check) = grep { $_->{check} eq 'AuthorDeps' } @{ conformance($repo)->check };
+        return $check;
+    };
+    conformance($repo)->update;
+    is( $check->()->{status}, 'pass', 'the dist.ini of the template passes' );
+
+    my $template = slurp("$repo/dist.ini");
+    my ( $module, $version ) = $template =~ m/^;\ authordep\ (Pod::Weaver::Section::Blurbs)\ =\ (\S+)$/m or return fail('the template asks for Blurbs at a version');
+    spew( "$repo/dist.ini", $template =~ s/^(;\ authordep\ \Q$module\E\ =\ )\S+$/${1}0.001/mr );
+    my $old = $check->();
+    is( $old->{status}, 'fail', 'one that asks for less fails' );
+    like( $old->{detail}, qr/\Q$module\E\ 0[.]001,\ not\ \Q$version\E/, 'and names the module and both versions' );
+    conformance($repo)->update;
+    is( slurp("$repo/dist.ini"), $template, 'and update raises it to the version of the template' );
 };
 
 # A policy that the compat template dropped stays in every profile made before,
