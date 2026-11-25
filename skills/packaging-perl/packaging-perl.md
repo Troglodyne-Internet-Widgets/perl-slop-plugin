@@ -290,9 +290,15 @@ whose POD does not give these facts:
 - The return value of a sub that returns one, with `@returns`.
 - For a sub that can die, how it dies, with `@throws`.
 - A call of the sub, with `@example`.
- It takes the place
-of `[PodCoverageTests]`, so `[@TestingMania]` turns that plugin off. A sub that
-needs no POD, such as `BUILD`, goes on a `=for Pod::Coverage` line, as before.
+
+It takes the place of `[PodCoverageTests]`, so `[@TestingMania]` turns that
+plugin off. A sub that needs no POD, such as `BUILD`, goes on a
+`=for Pod::Coverage` line, as before.
+
+A sub with a section of its own heads it with the call, such as
+`=head2 name($arg)` or `=head2 Class->name($arg)`. A heading that assigns the
+call, such as `=head2 $x = name($arg)`, fails: the test takes it for an
+example, and an example goes in a verbatim block.
 
 **`.perlcriticrc`** is the house policy set, whichever of the two profiles the
 question above picked, and it names a good number of policies that are not in
