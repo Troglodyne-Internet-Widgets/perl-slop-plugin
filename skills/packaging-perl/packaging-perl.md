@@ -194,7 +194,7 @@ checks:
       Run::BeforeBuild:
         run: cp extra/files .
     positions:
-      Run::BeforeBuild: GatherDir
+      Run::BeforeBuild: Git::GatherDir
     authordeps:
       # This distribution has no tests-covering hooks.
       Perl::Tests::Covering: off
@@ -389,16 +389,24 @@ If two branches each add a line to it, the second merge conflicts. Two commits
 that each carry a `Changelog:` trailer do not conflict. The entries that are
 in it stay as they are, and each release adds one above them.
 
-**`MANIFEST.SKIP`** names the files that stay out of the tarball, and
+**`[Git::GatherDir]`** gathers each file that git does not ignore, tracked or
+not. So `.gitignore` keeps a file out of the build as well as out of the
+repository, and a file that you have not committed yet is in the build that
+`dzil test` makes. At release, `[Git::Check]` refuses untracked files, so the
+release has only what is committed.
+
+**`MANIFEST.SKIP`** names the tracked files that stay out of the tarball, and
 `[ManifestSkip]` reads it. These are the files for the people who work on the
 distribution: `CLAUDE.md`, `git-hooks/`, and the files that only `dzil` reads,
 such as `dist.ini`. Each line is a regex that ExtUtils::Manifest matches against
-the path from the root, so anchor it with `^`. A dotfile needs no line, because
-`[GatherDir]` does not gather it. `LICENSE` is the one exclusion in
-`[GatherDir]`: `[License]` writes it, and a second copy stops the build.
+the path from the root, so anchor it with `^`. A file that `.gitignore` names
+needs no line, and a dotfile needs none, because `[Git::GatherDir]` gathers
+neither. `LICENSE` is the one exclusion in `[Git::GatherDir]`: `[License]`
+writes it, and a second copy stops the build.
 The file also skips itself. A copy in the build replaces the default list of
 the release test of the `MANIFEST`, and that default covers what `make` leaves
-there. To keep another file out, add a line here, not to `[GatherDir]`.
+there. To keep another tracked file out, add a line here, not to
+`[Git::GatherDir]`.
 
 **`.mailmap`** is for `[Git::Contributors]`, which otherwise lists the same
 person once per address they have ever committed from.

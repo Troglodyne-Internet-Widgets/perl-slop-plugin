@@ -645,10 +645,10 @@ subtest 'the MANIFEST.SKIP keeps the files for development out of the tarball' =
         ok( !$skipped->($path), "it keeps $path" );
     }
 
-    # MANIFEST.SKIP is the one place that says what stays out, so GatherDir
+    # MANIFEST.SKIP is the one place that says what stays out, so Git::GatherDir
     # excludes only the LICENSE that [License] writes.
-    my ($gather) = slurp("$TEMPLATES/dist.ini") =~ m/^\[GatherDir\]\n(.*?)^\[/ms;
-    is_deeply( [ $gather =~ m/^(exclude_\w+\s*=\s*\S+)/mg ], ['exclude_filename = LICENSE'], 'and [GatherDir] excludes only LICENSE' );
+    my ($gather) = slurp("$TEMPLATES/dist.ini") =~ m/^\[Git::GatherDir\]\n(.*?)^\[/ms;
+    is_deeply( [ $gather =~ m/^(exclude_\w+\s*=\s*\S+)/mg ], ['exclude_filename = LICENSE'], 'and [Git::GatherDir] excludes only LICENSE' );
     like( slurp("$TEMPLATES/dist.ini"), qr/^\[ManifestSkip\]$/m, 'while dist.ini reads the MANIFEST.SKIP' );
 };
 

@@ -60,7 +60,7 @@ C<%CASE>.  That is the profile for the floor, copied whole.
 =item * The F<META.json> that C<dzil build> writes names the distribution, and
 requires the perl that the case calls for.  The build has no F<CLAUDE.md>,
 F<git-hooks/>, F<dist.ini> or dotfile, which F<MANIFEST.SKIP> and
-C<[GatherDir]> keep out.
+C<[Git::GatherDir]> keep out.
 
 =item * The build writes the POD of a sub from the blurb above it, which the
 C<[Blurbs]> section of F<weaver.ini> does.  The checks add the module with that
